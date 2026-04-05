@@ -1,0 +1,102 @@
+# All expanded dataset ingesters — Docker Compose Extension
+# Usage: docker compose -f docker-compose.yml -f docker-compose.datasets.yml up -d
+
+services:
+
+  # ── Conflict Domain ──────────────────────────────────────
+  acled-worker:
+    build:
+      context: ./workers/acled
+      dockerfile: Dockerfile
+    container_name: mda-acled
+    restart: unless-stopped
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+      ACLED_API_KEY: "${ACLED_API_KEY:-}"
+      ACLED_EMAIL: "${ACLED_EMAIL:-}"
+    depends_on: [redpanda]
+    networks: [mda-net]
+
+  # ── Economic Domain ──────────────────────────────────────
+  fred-worker:
+    build:
+      context: ./workers/economic
+      dockerfile: Dockerfile
+    container_name: mda-fred
+    restart: unless-stopped
+    command: ["python", "-u", "fred_ingester.py"]
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+      FRED_API_KEY: "${FRED_API_KEY:-}"
+    depends_on: [redpanda]
+    networks: [mda-net]
+
+  worldbank-worker:
+    build:
+      context: ./workers/economic
+      dockerfile: Dockerfile
+    container_name: mda-worldbank
+    restart: unless-stopped
+    command: ["python", "-u", "worldbank_ingester.py"]
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+    depends_on: [redpanda]
+    networks: [mda-net]
+
+  # ── Humanitarian Domain ──────────────────────────────────
+  nasa-firms-worker:
+    build:
+      context: ./workers/geospatial
+      dockerfile: ../ais/Dockerfile
+    container_name: mda-nasa-firms
+    restart: unless-stopped
+    command: ["python", "-u", "nasa_firms_ingester.py"]
+    volumes:
+      - ./workers/geospatial:/app:ro
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+      NASA_FIRMS_KEY: "${NASA_FIRMS_KEY:-}"
+    depends_on: [redpanda]
+    networks: [mda-net]
+
+  iom-dtm-worker:
+    build:
+      context: ./workers/humanitarian
+      dockerfile: ../ais/Dockerfile
+    container_name: mda-iom-dtm
+    restart: unless-stopped
+    command: ["python", "-u", "iom_dtm_ingester.py"]
+    volumes:
+      - ./workers/humanitarian:/app:ro
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+    depends_on: [redpanda]
+    networks: [mda-net]
+
+  # ── Crypto Domain ────────────────────────────────────────
+  coingecko-worker:
+    build:
+      context: ./workers/crypto
+      dockerfile: ../ais/Dockerfile
+    container_name: mda-coingecko
+    restart: unless-stopped
+    command: ["python", "-u", "coingecko_ingester.py"]
+    volumes:
+      - ./workers/crypto:/app:ro
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+    depends_on: [redpanda]
+    networks: [mda-net]
+
+  # ── Financial Domain (EU/UN Sanctions) ───────────────────
+  sanctions-aggregator:
+    build:
+      context: ./workers/financial
+      dockerfile: Dockerfile
+    container_name: mda-sanctions-agg
+    restart: unless-stopped
+    command: ["python", "-u", "sanctions_aggregator.py"]
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+    depends_on: [redpanda]
+    networks: [mda-net]
