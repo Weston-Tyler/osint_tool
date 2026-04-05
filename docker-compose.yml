@@ -1,0 +1,388 @@
+# MDA System — Docker Compose (Phase 1: Foundation)
+# Run: docker compose up -d
+
+networks:
+  mda-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  memgraph-data:
+  postgres-data:
+  redpanda-data:
+  minio-data:
+  elasticsearch-data:
+  geoserver-data:
+  grafana-data:
+
+services:
+
+  # ============================================================
+  # GRAPH DATABASE — Memgraph
+  # Port 7687: Bolt (Cypher) | Port 7444: HTTPS | Port 3000: Memgraph Lab
+  # ============================================================
+  memgraph:
+    image: memgraph/memgraph-platform:2.14.0
+    container_name: mda-memgraph
+    restart: unless-stopped
+    ports:
+      - "7687:7687"
+      - "7444:7444"
+      - "3000:3000"
+    volumes:
+      - memgraph-data:/var/lib/memgraph
+      - ./configs/memgraph.conf:/etc/memgraph/memgraph.conf:ro
+      - ./schema/graph/memgraph-init.cypher:/docker-entrypoint-initdb.d/init.cypher:ro
+    environment:
+      MEMGRAPH_MEMORY_LIMIT: 40960
+      MEMGRAPH_LOG_LEVEL: WARNING
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    networks:
+      mda-net:
+        ipv4_address: 172.28.1.10
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "7687"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ============================================================
+  # RELATIONAL + GEOSPATIAL + GRAPH EXTENSION — PostgreSQL + PostGIS + AGE
+  # Port 5432: PostgreSQL
+  # ============================================================
+  postgres:
+    image: apache/age:PG16
+    container_name: mda-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./schema/relational/postgres-init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+      - ./schema/relational/postgis-init.sql:/docker-entrypoint-initdb.d/02_postgis.sql:ro
+    environment:
+      POSTGRES_DB: mda
+      POSTGRES_USER: mda
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+    command: >
+      postgres
+        -c shared_preload_libraries='age'
+        -c max_connections=200
+        -c shared_buffers=8GB
+        -c effective_cache_size=24GB
+        -c maintenance_work_mem=2GB
+        -c work_mem=256MB
+        -c wal_level=replica
+        -c max_wal_size=4GB
+        -c checkpoint_completion_target=0.9
+    networks:
+      mda-net:
+        ipv4_address: 172.28.1.11
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mda -d mda"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ============================================================
+  # MESSAGE BROKER — Redpanda (Kafka-compatible)
+  # Port 9092: Kafka API | Port 9644: Admin API | Port 8082: HTTP Proxy
+  # Port 8081: Schema Registry
+  # ============================================================
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v23.3.7
+    container_name: mda-redpanda
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr internal://redpanda:8082,external://localhost:18082
+      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr redpanda:33145
+      - --advertise-rpc-addr redpanda:33145
+      - --mode dev-container
+      - --smp 4
+      - --memory 8G
+      - --default-log-level=warn
+    ports:
+      - "9092:9092"
+      - "19092:19092"
+      - "9644:9644"
+      - "8082:8082"
+      - "8081:8081"
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    networks:
+      mda-net:
+        ipv4_address: 172.28.1.12
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy.*true' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  redpanda-console:
+    image: docker.redpanda.com/redpandadata/console:v2.4.3
+    container_name: mda-redpanda-console
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      CONFIG_FILEPATH: /etc/console/config.yaml
+    volumes:
+      - ./configs/redpanda-console.yaml:/etc/console/config.yaml:ro
+    depends_on:
+      - redpanda
+    networks:
+      mda-net:
+        ipv4_address: 172.28.1.13
+
+  # ============================================================
+  # OBJECT STORAGE — MinIO
+  # Port 9000: S3 API | Port 9001: Console UI
+  # ============================================================
+  minio:
+    image: minio/minio:RELEASE.2024-03-26T22-10-45Z
+    container_name: mda-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER:-mda_admin}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+    networks:
+      mda-net:
+        ipv4_address: 172.28.1.14
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # ============================================================
+  # SEARCH — Elasticsearch 8
+  # Port 9200: REST API | Port 9300: Cluster Transport
+  # ============================================================
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
+    container_name: mda-elasticsearch
+    restart: unless-stopped
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+      - ./configs/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      xpack.security.http.ssl.enabled: "false"
+      ES_JAVA_OPTS: "-Xms8g -Xmx8g"
+      ELASTIC_PASSWORD: "${ELASTIC_PASSWORD}"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    networks:
+      mda-net:
+        ipv4_address: 172.28.1.15
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q 'green\\|yellow'"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  # ============================================================
+  # GIS SERVER — GeoServer
+  # Port 8085: GeoServer Web UI and WMS/WFS/WCS endpoints
+  # ============================================================
+  geoserver:
+    image: docker.osgeo.org/geoserver:2.25.1
+    container_name: mda-geoserver
+    restart: unless-stopped
+    ports:
+      - "8085:8080"
+    volumes:
+      - geoserver-data:/opt/geoserver_data
+    environment:
+      GEOSERVER_DATA_DIR: /opt/geoserver_data
+      GEOSERVER_ADMIN_USER: "${GEOSERVER_ADMIN_USER:-admin}"
+      GEOSERVER_ADMIN_PASSWORD: "${GEOSERVER_ADMIN_PASSWORD}"
+      JAVA_OPTS: >-
+        -Xms2g -Xmx4g
+        -Dorg.geotools.referencing.forceXY=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      mda-net:
+        ipv4_address: 172.28.1.16
+
+  # ============================================================
+  # API LAYER — FastAPI
+  # Port 8000: REST + WebSocket API
+  # ============================================================
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: mda-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./api:/app
+    environment:
+      MEMGRAPH_HOST: memgraph
+      MEMGRAPH_PORT: "7687"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: mda
+      POSTGRES_USER: mda
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      KAFKA_BOOTSTRAP: redpanda:9092
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: "${MINIO_ROOT_USER:-mda_admin}"
+      MINIO_SECRET_KEY: "${MINIO_ROOT_PASSWORD}"
+      API_SECRET_KEY: "${API_SECRET_KEY}"
+      LOG_LEVEL: INFO
+    depends_on:
+      memgraph:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    networks:
+      mda-net:
+        ipv4_address: 172.28.1.17
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ============================================================
+  # INGESTION WORKERS
+  # ============================================================
+  worker-ais:
+    build:
+      context: ./workers/ais
+      dockerfile: Dockerfile
+    container_name: mda-worker-ais
+    restart: unless-stopped
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+      AISHUB_USERNAME: "${AISHUB_USERNAME}"
+      GFW_API_KEY: "${GFW_API_KEY}"
+    depends_on:
+      - redpanda
+    networks:
+      - mda-net
+
+  worker-sanctions:
+    build:
+      context: ./workers/sanctions
+      dockerfile: Dockerfile
+    container_name: mda-worker-sanctions
+    restart: unless-stopped
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+      MEMGRAPH_BOLT_URL: bolt://memgraph:7687
+    depends_on:
+      - redpanda
+      - memgraph
+    networks:
+      - mda-net
+
+  worker-gdelt:
+    build:
+      context: ./workers/gdelt
+      dockerfile: Dockerfile
+    container_name: mda-worker-gdelt
+    restart: unless-stopped
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+    depends_on:
+      - redpanda
+    networks:
+      - mda-net
+
+  worker-uas:
+    build:
+      context: ./workers/uas
+      dockerfile: Dockerfile
+    container_name: mda-worker-uas
+    restart: unless-stopped
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+    depends_on:
+      - redpanda
+    networks:
+      - mda-net
+
+  # ============================================================
+  # GRAPH PROCESSOR — Kafka -> Memgraph consumer
+  # ============================================================
+  graph-processor:
+    build:
+      context: ./processors/graph
+      dockerfile: Dockerfile
+    container_name: mda-graph-processor
+    restart: unless-stopped
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+      MEMGRAPH_BOLT_URL: bolt://memgraph:7687
+      POSTGRES_DSN: "postgresql://mda:${POSTGRES_PASSWORD}@postgres:5432/mda"
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+    depends_on:
+      memgraph:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    networks:
+      - mda-net
+
+  # ============================================================
+  # DASHBOARDS — Grafana
+  # Port 3001: Web UI
+  # ============================================================
+  grafana:
+    image: grafana/grafana:10.3.3
+    container_name: mda-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./configs/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./configs/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    environment:
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD}"
+      GF_SERVER_ROOT_URL: http://localhost:3001
+      GF_INSTALL_PLUGINS: grafana-worldmap-panel,grafana-clock-panel
+    depends_on:
+      - postgres
+      - elasticsearch
+    networks:
+      mda-net:
+        ipv4_address: 172.28.1.18

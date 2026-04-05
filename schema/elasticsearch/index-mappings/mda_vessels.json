@@ -1,0 +1,55 @@
+{
+  "mappings": {
+    "properties": {
+      "imo": { "type": "keyword" },
+      "mmsi": { "type": "keyword" },
+      "name": {
+        "type": "text",
+        "analyzer": "standard",
+        "fields": {
+          "keyword": { "type": "keyword" },
+          "trigram": {
+            "type": "text",
+            "analyzer": "trigram_analyzer"
+          }
+        }
+      },
+      "former_names": { "type": "text", "analyzer": "standard" },
+      "aliases": { "type": "text", "analyzer": "standard" },
+      "call_sign": { "type": "keyword" },
+      "flag_state": { "type": "keyword" },
+      "vessel_type": { "type": "keyword" },
+      "risk_score": { "type": "float" },
+      "sanctions_status": { "type": "keyword" },
+      "ofac_programs": { "type": "keyword" },
+      "ais_status": { "type": "keyword" },
+      "last_position": { "type": "geo_point" },
+      "last_ais_timestamp": { "type": "date" },
+      "registered_owner": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+      "beneficial_owner": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+      "gross_tonnage": { "type": "float" },
+      "source_ids": { "type": "keyword" },
+      "system_updated_at": { "type": "date" }
+    }
+  },
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "analysis": {
+      "analyzer": {
+        "trigram_analyzer": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": ["lowercase", "trigram_filter"]
+        }
+      },
+      "filter": {
+        "trigram_filter": {
+          "type": "ngram",
+          "min_gram": 3,
+          "max_gram": 3
+        }
+      }
+    }
+  }
+}

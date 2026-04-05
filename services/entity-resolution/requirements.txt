@@ -1,0 +1,6 @@
+splink>=3.9.0
+duckdb>=0.10.0
+pandas>=2.2.0
+asyncpg>=0.29.0
+gqlalchemy>=1.6.0
+pyarrow>=15.0.0
