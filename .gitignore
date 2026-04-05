@@ -1,0 +1,67 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+eggs/
+*.egg
+.eggs/
+*.whl
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Data directories (large files)
+/data/
+*.parquet
+*.csv.gz
+*.zip
+
+# Docker volumes
+postgres-data/
+memgraph-data/
+redpanda-data/
+minio-data/
+elasticsearch-data/
+geoserver-data/
+keycloak-data/
+grafana-data/
+
+# Certificates
+/certs/
+*.pem
+*.key
+*.crt
+*.p12
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Node
+node_modules/
+frontend/kepler-gl/build/
+
+# Coverage
+.coverage
+htmlcov/
+.pytest_cache/

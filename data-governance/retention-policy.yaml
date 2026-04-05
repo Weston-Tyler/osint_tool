@@ -1,0 +1,46 @@
+# MDA Data Governance — Retention Policy
+# All durations are maximums; data may be deleted sooner if storage limits are reached.
+
+retention:
+  ais_positions_raw:
+    duration: 365 days
+    reason: "AIS data is public; 1 year supports pattern analysis"
+
+  ais_positions_processed:
+    duration: 2 years
+    reason: "Processed tracks used for historical vessel behavior analysis"
+
+  sanctions_data:
+    duration: indefinite
+    reason: "Sanctions listings are permanent historical records"
+
+  intelligence_reports:
+    duration: indefinite
+    condition: "Mark stale after confidence_decay exceeds 0.3"
+
+  uas_detections:
+    duration: 90 days
+    reason: "High volume; correlations extracted within 30 days"
+
+  gdelt_raw:
+    duration: 30 days
+    reason: "High volume; processed extractions retained longer"
+
+  gdelt_processed:
+    duration: 1 year
+
+  entity_resolution_clusters:
+    duration: indefinite
+    reason: "Identity resolution is cumulative"
+
+  kafka_dlq:
+    duration: 7 days
+    reason: "Failed messages reviewed weekly"
+
+pii_rules:
+  - "Do not store full names of non-public private individuals"
+  - "Do not store financial account numbers or crypto wallet addresses of private individuals"
+  - "OFAC SDN and OpenSanctions persons are public records and may be stored"
+  - "UAS operator location estimates: store only as grid reference, not linked to identity"
+  - "All community submissions reviewed for PII before ingestion"
+  - "Crew nationality from interdictions: aggregate only, no individual names from open sources"

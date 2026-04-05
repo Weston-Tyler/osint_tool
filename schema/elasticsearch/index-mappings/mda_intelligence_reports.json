@@ -1,0 +1,39 @@
+{
+  "mappings": {
+    "properties": {
+      "report_id": { "type": "keyword" },
+      "title": {
+        "type": "text",
+        "analyzer": "standard",
+        "fields": { "keyword": { "type": "keyword" } }
+      },
+      "report_type": { "type": "keyword" },
+      "classification": { "type": "keyword" },
+      "tlp_color": { "type": "keyword" },
+      "source_type": { "type": "keyword" },
+      "source_reliability": { "type": "keyword" },
+      "information_accuracy": { "type": "keyword" },
+      "confidence_level": { "type": "keyword" },
+      "summary": { "type": "text", "analyzer": "standard" },
+      "full_text": { "type": "text", "analyzer": "standard" },
+      "author": { "type": "keyword" },
+      "producing_org": { "type": "keyword" },
+      "report_date": { "type": "date" },
+      "entities_mentioned": {
+        "type": "nested",
+        "properties": {
+          "entity_id": { "type": "keyword" },
+          "entity_type": { "type": "keyword" },
+          "name": { "type": "text" },
+          "role_in_report": { "type": "keyword" }
+        }
+      },
+      "source_ids": { "type": "keyword" },
+      "system_created_at": { "type": "date" }
+    }
+  },
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0
+  }
+}
