@@ -1,0 +1,118 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "mda-ingestion-health",
+    "title": "MDA Ingestion Health",
+    "tags": ["mda", "ingestion", "health"],
+    "timezone": "utc",
+    "refresh": "10s",
+    "time": { "from": "now-6h", "to": "now" },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Total AIS Positions",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+        "targets": [
+          {
+            "rawSql": "SELECT count(*) AS total FROM ais_positions;",
+            "datasource": "PostgreSQL",
+            "format": "table"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Unique Vessels (AIS)",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+        "targets": [
+          {
+            "rawSql": "SELECT count(DISTINCT mmsi) AS unique_vessels FROM ais_positions;",
+            "datasource": "PostgreSQL",
+            "format": "table"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "OFAC Vessels Staged",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+        "targets": [
+          {
+            "rawSql": "SELECT count(*) FROM ofac_vessels_staging;",
+            "datasource": "PostgreSQL",
+            "format": "table"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "OpenSanctions Vessels Staged",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+        "targets": [
+          {
+            "rawSql": "SELECT count(*) FROM opensanctions_vessels_staging;",
+            "datasource": "PostgreSQL",
+            "format": "table"
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "AIS Ingestion Rate (positions/hour)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
+        "targets": [
+          {
+            "rawSql": "SELECT date_trunc('hour', valid_time) AS time, count(*) AS rate FROM ais_positions WHERE valid_time >= NOW() - INTERVAL '7 days' GROUP BY 1 ORDER BY 1;",
+            "datasource": "PostgreSQL",
+            "format": "time_series"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "title": "AIS Data Coverage by Source",
+        "type": "piechart",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+        "targets": [
+          {
+            "rawSql": "SELECT source, count(*) AS positions FROM ais_positions GROUP BY source ORDER BY positions DESC LIMIT 10;",
+            "datasource": "PostgreSQL",
+            "format": "table"
+          }
+        ]
+      },
+      {
+        "id": 21,
+        "title": "AIS Time Range Coverage",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 12, "x": 12, "y": 12 },
+        "targets": [
+          {
+            "rawSql": "SELECT min(valid_time) AS earliest, max(valid_time) AS latest, max(valid_time) - min(valid_time) AS span FROM ais_positions;",
+            "datasource": "PostgreSQL",
+            "format": "table"
+          }
+        ]
+      },
+      {
+        "id": 22,
+        "title": "Spatial Coverage Check (positions with valid geometry)",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 12, "x": 12, "y": 16 },
+        "targets": [
+          {
+            "rawSql": "SELECT count(*) FILTER (WHERE ST_IsValid(position)) AS valid_geom, count(*) FILTER (WHERE NOT ST_IsValid(position)) AS invalid_geom FROM ais_positions LIMIT 100000;",
+            "datasource": "PostgreSQL",
+            "format": "table"
+          }
+        ]
+      }
+    ]
+  },
+  "overwrite": true
+}
