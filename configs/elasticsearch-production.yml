@@ -1,0 +1,35 @@
+# Elasticsearch 8 — Production configuration
+# Target: Mac mini M-series, 64 GB RAM
+
+cluster.name: mda-cluster
+node.name: mda-es-01
+network.host: 0.0.0.0
+http.port: 9200
+
+discovery.type: single-node
+
+# ---- Security ----
+xpack.security.enabled: true
+xpack.security.http.ssl.enabled: false
+# Enable TLS in production:
+# xpack.security.http.ssl.enabled: true
+# xpack.security.http.ssl.keystore.path: /usr/share/elasticsearch/config/certs/http.p12
+
+# ---- Memory ----
+# Set via ES_JAVA_OPTS in docker-compose: -Xms12g -Xmx12g
+# Rule: 50% of available RAM, max 32GB (compressed oops threshold)
+
+# ---- Performance ----
+indices.query.bool.max_clause_count: 8192
+indices.memory.index_buffer_size: 20%
+
+# ---- Indexing ----
+action.auto_create_index: true
+
+# ---- Circuit breakers ----
+indices.breaker.total.use_real_memory: true
+indices.breaker.total.limit: 85%
+
+# ---- Thread pools ----
+thread_pool.write.queue_size: 1000
+thread_pool.search.queue_size: 1000

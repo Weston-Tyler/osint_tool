@@ -1,0 +1,9 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir gqlalchemy>=1.6.0
+
+COPY . .
+
+CMD ["python", "-u", "stix_exporter.py"]

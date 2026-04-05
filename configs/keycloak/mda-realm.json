@@ -1,0 +1,94 @@
+{
+  "realm": "mda",
+  "enabled": true,
+  "displayName": "MDA Intelligence Database",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "maxFailureWaitSeconds": 900,
+  "failureFactor": 5,
+  "roles": {
+    "realm": [
+      {
+        "name": "mda-admin",
+        "description": "Full access to all MDA endpoints and administration"
+      },
+      {
+        "name": "mda-analyst",
+        "description": "Read all data, write intelligence reports"
+      },
+      {
+        "name": "mda-operator",
+        "description": "Read operational data (vessels, UAS, alerts)"
+      },
+      {
+        "name": "mda-viewer",
+        "description": "Read-only access to non-sensitive endpoints"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "mda-api",
+      "name": "MDA API",
+      "enabled": true,
+      "publicClient": false,
+      "bearerOnly": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "protocol": "openid-connect"
+    },
+    {
+      "clientId": "mda-frontend",
+      "name": "MDA Frontend",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "protocol": "openid-connect",
+      "redirectUris": [
+        "http://localhost:3002/*",
+        "http://localhost:8000/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3002",
+        "http://localhost:8000"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "admin",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "MDA",
+      "lastName": "Admin",
+      "email": "admin@mda.local",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "changeme",
+          "temporary": true
+        }
+      ],
+      "realmRoles": ["mda-admin"]
+    },
+    {
+      "username": "analyst",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "MDA",
+      "lastName": "Analyst",
+      "email": "analyst@mda.local",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "changeme",
+          "temporary": true
+        }
+      ],
+      "realmRoles": ["mda-analyst"]
+    }
+  ]
+}

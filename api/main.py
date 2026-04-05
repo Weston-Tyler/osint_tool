@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from gqlalchemy import Memgraph
 
 from api.routers import analytics, uas, vessels, websocket
+from api.services.metrics import MetricsMiddleware, router as metrics_router
 
 
 @asynccontextmanager
@@ -50,16 +51,20 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Tighten in Phase 4 with Keycloak
+    allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Prometheus metrics middleware
+app.add_middleware(MetricsMiddleware)
 
 # Register routers
 app.include_router(vessels.router, prefix="/v1", tags=["vessels"])
 app.include_router(uas.router, prefix="/v1", tags=["uas"])
 app.include_router(analytics.router, prefix="/v1", tags=["analytics"])
 app.include_router(websocket.router, prefix="/v1", tags=["websocket"])
+app.include_router(metrics_router, tags=["metrics"])
 
 
 @app.get("/health")

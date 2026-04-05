@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mda-api
+  namespace: mda
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: mda-api
+  template:
+    metadata:
+      labels:
+        app: mda-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: api
+          image: mda-api:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: MEMGRAPH_HOST
+              value: memgraph
+            - name: MEMGRAPH_PORT
+              value: "7687"
+            - name: POSTGRES_HOST
+              value: postgres
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_DB
+              value: mda
+            - name: POSTGRES_USER
+              value: mda
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mda-secrets
+                  key: postgres-password
+            - name: KAFKA_BOOTSTRAP
+              value: redpanda:9092
+            - name: ELASTICSEARCH_URL
+              value: http://elasticsearch:9200
+            - name: AUTH_ENABLED
+              value: "true"
+            - name: KEYCLOAK_URL
+              value: http://keycloak:8443
+            - name: KEYCLOAK_REALM
+              value: mda
+            - name: API_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mda-secrets
+                  key: api-secret-key
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "2"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mda-api
+  namespace: mda
+spec:
+  selector:
+    app: mda-api
+  ports:
+    - port: 8000
+      targetPort: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: mda-api-hpa
+  namespace: mda
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: mda-api
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
