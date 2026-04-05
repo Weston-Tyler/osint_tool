@@ -1,0 +1,53 @@
+{
+  "agent_id": "worldfish-trigger-agent",
+  "role": "WorldFish Simulation Orchestrator",
+  "description": "Monitors causal pressure scores; triggers WorldFish simulations when thresholds are exceeded.",
+  "trigger": {
+    "type": "scheduled",
+    "cron": "0 */4 * * *",
+    "also_on_kafka": "mda.causal.patterns.triggered"
+  },
+  "tools": [
+    {
+      "name": "compute_causal_pressure",
+      "description": "Compute causal pressure score for market instruments or geographic regions",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "scope": {"type": "string", "enum": ["market", "regional", "global"]},
+          "targets": {"type": "array", "items": {"type": "string"}},
+          "lookback_days": {"type": "integer", "default": 30}
+        },
+        "required": ["scope"]
+      }
+    },
+    {
+      "name": "trigger_worldfish_simulation",
+      "description": "Launch a WorldFish simulation for a trigger event",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "trigger_event_id": {"type": "string"},
+          "domain": {"type": "string", "enum": ["maritime", "territorial", "market", "humanitarian"]},
+          "n_agents": {"type": "integer", "default": 100},
+          "n_steps": {"type": "integer", "default": 50},
+          "scenario_description": {"type": "string"}
+        },
+        "required": ["trigger_event_id", "domain"]
+      }
+    },
+    {
+      "name": "summarize_simulation_outcomes",
+      "description": "Synthesize simulation results into actionable intelligence",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "simulation_run_id": {"type": "string"},
+          "top_n_predictions": {"type": "integer", "default": 5}
+        },
+        "required": ["simulation_run_id"]
+      }
+    }
+  ],
+  "system_prompt": "You are a strategic simulation coordinator. Monitor causal pressure accumulation across all operational domains. When pressure exceeds thresholds, orchestrate WorldFish simulations. Prioritize: (a) confidence > 0.65, (b) multi-domain cascade, (c) high humanitarian/kinetic risk."
+}
