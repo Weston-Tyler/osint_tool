@@ -1,0 +1,83 @@
+# GDELT Full Integration — Docker Compose Extension
+# Usage: docker compose -f docker-compose.yml -f docker-compose.gdelt.yml up -d
+
+services:
+
+  # ── GDELT GKG Ingester (15-minute poll) ──────────────────
+  gdelt-gkg-worker:
+    build:
+      context: ./workers/gdelt
+      dockerfile: Dockerfile
+    container_name: mda-gdelt-gkg
+    restart: unless-stopped
+    command: ["python", "-u", "gkg_ingester.py"]
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+    depends_on:
+      - redpanda
+    networks:
+      - mda-net
+
+  # ── GDELT DOC API Poller ─────────────────────────────────
+  gdelt-doc-worker:
+    build:
+      context: ./workers/gdelt
+      dockerfile: Dockerfile
+    container_name: mda-gdelt-doc
+    restart: unless-stopped
+    command: ["python", "-u", "doc_api.py"]
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+    depends_on:
+      - redpanda
+    networks:
+      - mda-net
+
+  # ── GDELT GEO API Poller ─────────────────────────────────
+  gdelt-geo-worker:
+    build:
+      context: ./workers/gdelt
+      dockerfile: Dockerfile
+    container_name: mda-gdelt-geo
+    restart: unless-stopped
+    command: ["python", "-u", "geo_api.py"]
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+    depends_on:
+      - redpanda
+    networks:
+      - mda-net
+
+  # ── GDELT TV API Monitor ─────────────────────────────────
+  gdelt-tv-worker:
+    build:
+      context: ./workers/gdelt
+      dockerfile: Dockerfile
+    container_name: mda-gdelt-tv
+    restart: unless-stopped
+    command: ["python", "-u", "tv_api.py"]
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+    depends_on:
+      - redpanda
+    networks:
+      - mda-net
+
+  # ── GDELT BigQuery Batch (manual/scheduled) ──────────────
+  gdelt-bigquery:
+    build:
+      context: ./workers/gdelt
+      dockerfile: Dockerfile
+    container_name: mda-gdelt-bigquery
+    restart: "no"
+    command: ["python", "-u", "bigquery_connector.py"]
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+      GBQ_PROJECT_ID: "${GBQ_PROJECT_ID:-}"
+      GOOGLE_APPLICATION_CREDENTIALS: /credentials/gcp-key.json
+    volumes:
+      - ${GCP_CREDENTIALS_PATH:-./credentials}:/credentials:ro
+    depends_on:
+      - redpanda
+    networks:
+      - mda-net
