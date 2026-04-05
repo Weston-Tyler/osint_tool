@@ -1,0 +1,184 @@
+# Causal Chain Analysis Engine + WorldFish — Docker Compose Extension
+# Usage: docker compose -f docker-compose.yml -f docker-compose.causal.yml up -d
+
+x-common-env: &common-env
+  MEMGRAPH_HOST: memgraph
+  MEMGRAPH_PORT: "7687"
+  POSTGRES_DSN: postgresql://mda:${POSTGRES_PASSWORD}@postgres:5432/mda
+  KAFKA_BOOTSTRAP: redpanda:9092
+  OLLAMA_BASE_URL: http://ollama:11434
+  OLLAMA_LLM_MODEL: qwen2.5:7b
+  ELASTICSEARCH_URL: http://elasticsearch:9200
+
+services:
+
+  # ── Ollama LLM Server ────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: mda-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_models:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - mda-net
+    deploy:
+      resources:
+        limits:
+          cpus: "12"
+          memory: 32G
+
+  # ── Causal Extraction Service ────────────────────────────
+  causal-extractor:
+    build:
+      context: ./services/causal_extractor
+    container_name: mda-causal-extractor
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+    depends_on:
+      - redpanda
+      - ollama
+    networks:
+      - mda-net
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
+
+  # ── Granger Causality Analyzer ───────────────────────────
+  granger-analyzer:
+    build:
+      context: ./services/causal_extractor
+    container_name: mda-granger-analyzer
+    restart: unless-stopped
+    command: ["python", "-u", "granger_analyzer.py"]
+    environment:
+      <<: *common-env
+    depends_on:
+      - postgres
+      - memgraph
+    networks:
+      - mda-net
+    deploy:
+      resources:
+        limits:
+          cpus: "6"
+          memory: 12G
+
+  # ── Cross-Domain Matcher ─────────────────────────────────
+  cross-domain-matcher:
+    build:
+      context: ./services/causal_extractor
+    container_name: mda-cross-domain-matcher
+    restart: unless-stopped
+    command: ["python", "-u", "cross_domain_matcher.py"]
+    environment:
+      <<: *common-env
+    depends_on:
+      - postgres
+      - memgraph
+      - redpanda
+    networks:
+      - mda-net
+
+  # ── WorldFish Simulation Engine ──────────────────────────
+  worldfish-engine:
+    build:
+      context: ./worldfish
+    container_name: mda-worldfish
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      WORLDFISH_DEFAULT_N_AGENTS: "100"
+      WORLDFISH_DEFAULT_STEPS: "50"
+      WORLDFISH_MIN_RISK_SCORE: "7.0"
+    volumes:
+      - worldfish_data:/app/data
+    depends_on:
+      - memgraph
+      - ollama
+      - postgres
+    networks:
+      - mda-net
+    deploy:
+      resources:
+        limits:
+          cpus: "8"
+          memory: 24G
+
+  # ── Causal Graph Learner ─────────────────────────────────
+  causal-graph-learner:
+    build:
+      context: ./services/causal_graph_learner
+    container_name: mda-causal-learner
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      LEARNING_INTERVAL_HOURS: "6"
+    depends_on:
+      - memgraph
+      - ollama
+    networks:
+      - mda-net
+
+  # ── Market Causal Tracker ────────────────────────────────
+  market-causal-tracker:
+    build:
+      context: ./services/market_causal
+      dockerfile: ../causal_extractor/Dockerfile
+    container_name: mda-market-tracker
+    restart: unless-stopped
+    command: ["python", "-u", "tracker.py"]
+    environment:
+      <<: *common-env
+    volumes:
+      - ./services/market_causal:/app:ro
+    depends_on:
+      - memgraph
+      - redpanda
+    networks:
+      - mda-net
+
+  # ── Humanitarian Monitor ─────────────────────────────────
+  humanitarian-monitor:
+    build:
+      context: ./services/humanitarian_monitor
+      dockerfile: ../causal_extractor/Dockerfile
+    container_name: mda-humanitarian-monitor
+    restart: unless-stopped
+    command: ["python", "-u", "crisis_predictor.py"]
+    environment:
+      <<: *common-env
+      MONITORED_COUNTRIES: >
+        Mexico,Colombia,Venezuela,Haiti,Sudan,Somalia,Yemen,
+        Ethiopia,Afghanistan,Myanmar,Honduras,Guatemala,El Salvador
+    volumes:
+      - ./services/humanitarian_monitor:/app:ro
+    depends_on:
+      - memgraph
+      - redpanda
+    networks:
+      - mda-net
+
+  # ── ATAK Overlay Publisher ───────────────────────────────
+  atak-overlay-publisher:
+    build:
+      context: ./services/atak_overlay
+    container_name: mda-atak-causal-overlay
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      ATAK_MULTICAST_GROUP: "239.2.3.1"
+      ATAK_MULTICAST_PORT: "6969"
+      PREDICTION_CONFIDENCE_THRESHOLD: "0.45"
+      REFRESH_INTERVAL_SECONDS: "300"
+    network_mode: host
+    depends_on:
+      - memgraph
+
+volumes:
+  ollama_models:
+  worldfish_data:

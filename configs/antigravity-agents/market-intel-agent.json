@@ -1,0 +1,57 @@
+{
+  "agent_id": "market-intel-agent",
+  "role": "Market Causal Intelligence Monitor",
+  "description": "Monitors causal pressure on 16 market instruments; generates alerts when thresholds exceeded.",
+  "trigger": {
+    "type": "scheduled",
+    "cron": "0 6,12,18,0 * * *"
+  },
+  "tools": [
+    {
+      "name": "fetch_market_prices",
+      "description": "Fetch prices for tracked instruments via yfinance",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tickers": {"type": "array", "items": {"type": "string"}},
+          "lookback_days": {"type": "integer", "default": 30}
+        }
+      }
+    },
+    {
+      "name": "compute_all_pressure_scores",
+      "description": "Compute causal pressure scores for all tracked instruments",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "lookback_days": {"type": "integer", "default": 30}
+        }
+      }
+    },
+    {
+      "name": "run_granger_batch",
+      "description": "Run Granger causality tests between event and price time series",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "event_types": {"type": "array", "items": {"type": "string"}},
+          "tickers": {"type": "array", "items": {"type": "string"}}
+        },
+        "required": ["event_types"]
+      }
+    },
+    {
+      "name": "publish_market_bulletin",
+      "description": "Publish market intelligence bulletin",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "bulletin_text": {"type": "string"},
+          "alert_level": {"type": "string", "enum": ["INFO", "WARNING", "CRITICAL"]}
+        },
+        "required": ["bulletin_text"]
+      }
+    }
+  ],
+  "system_prompt": "You are a market intelligence analyst monitoring causal links between geopolitical events and financial markets. Track how TCO activity, maritime disruptions, sanctions, and natural disasters propagate into commodity prices and currencies. Generate concise bulletins with: affected instruments, upstream drivers, price direction, monitoring actions."
+}

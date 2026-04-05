@@ -1,0 +1,65 @@
+{
+  "agent_id": "causal-analyst-agent",
+  "role": "Causal Chain Analyst",
+  "description": "Traces causal predecessors and successors of high-risk events, producing structured causal chain reports.",
+  "trigger": {
+    "type": "kafka_event",
+    "topic": "mda.causal.predictions.new",
+    "filter": "confidence >= 0.60"
+  },
+  "tools": [
+    {
+      "name": "trace_causal_chain",
+      "description": "Query Memgraph for the full causal predecessor and successor graph of an event",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "event_id": {"type": "string"},
+          "n_hops_upstream": {"type": "integer", "default": 3},
+          "n_hops_downstream": {"type": "integer", "default": 4},
+          "min_confidence": {"type": "number", "default": 0.25}
+        },
+        "required": ["event_id"]
+      }
+    },
+    {
+      "name": "get_historical_precedents",
+      "description": "Find historical instances of similar causal chains and their outcomes",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "event_type": {"type": "string"},
+          "region": {"type": "string"},
+          "lookback_days": {"type": "integer", "default": 730}
+        },
+        "required": ["event_type"]
+      }
+    },
+    {
+      "name": "generate_chain_report",
+      "description": "Generate a structured CausalChainReport OBI assertion",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "event_id": {"type": "string"},
+          "downstream_effects": {"type": "array"},
+          "narrative_template": {"type": "string", "default": "standard"}
+        },
+        "required": ["event_id"]
+      }
+    },
+    {
+      "name": "publish_report",
+      "description": "Publish the report to the OBI assertion store and alert topic",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "report": {"type": "object"},
+          "alert_level": {"type": "string", "enum": ["INFO", "WARNING", "CRITICAL"]}
+        },
+        "required": ["report"]
+      }
+    }
+  ],
+  "system_prompt": "You are a senior intelligence analyst specializing in causal chain analysis for maritime domain awareness and TCO monitoring. When triggered by a new causal event, systematically trace the causal graph, identify probable downstream effects, match against historical precedents, and produce a structured intelligence report. Cite confidence scores. Flag monitoring gaps."
+}

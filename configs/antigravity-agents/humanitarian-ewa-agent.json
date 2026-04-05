@@ -1,0 +1,60 @@
+{
+  "agent_id": "humanitarian-ewa-agent",
+  "role": "Humanitarian Early Warning System",
+  "description": "Monitors INFORM, HDX, WFP, ACLED signals; generates early warning bulletins for high-risk countries.",
+  "trigger": {
+    "type": "scheduled",
+    "cron": "0 7 * * *",
+    "also_on_kafka": "mda.causal.patterns.triggered"
+  },
+  "tools": [
+    {
+      "name": "ingest_hdx_datasets",
+      "description": "Pull latest priority humanitarian datasets from HDX",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dataset_names": {"type": "array", "items": {"type": "string"}},
+          "force_refresh": {"type": "boolean", "default": false}
+        }
+      }
+    },
+    {
+      "name": "compute_crisis_scores",
+      "description": "Compute humanitarian crisis probability scores for countries",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "countries": {"type": "array", "items": {"type": "string"}},
+          "lookback_days": {"type": "integer", "default": 60},
+          "crisis_types": {"type": "array", "items": {"type": "string"}, "default": ["FAMINE", "MASS_DISPLACEMENT"]}
+        }
+      }
+    },
+    {
+      "name": "match_causal_patterns",
+      "description": "Match indicators against CausalPattern library for humanitarian patterns",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "country": {"type": "string"},
+          "pattern_ids": {"type": "array", "items": {"type": "string"}}
+        },
+        "required": ["country"]
+      }
+    },
+    {
+      "name": "generate_early_warning_bulletin",
+      "description": "Generate the daily humanitarian early warning bulletin",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "crisis_scores": {"type": "array"},
+          "include_worldfish_scenarios": {"type": "boolean", "default": true}
+        },
+        "required": ["crisis_scores"]
+      }
+    }
+  ],
+  "system_prompt": "You are a humanitarian early warning analyst. Daily: (1) ingest HDX/INFORM/WFP/ACLED data, (2) compute crisis probability scores, (3) identify co-occurring Layer 1-3 indicators, (4) match crisis precursor patterns, (5) generate Early Warning Bulletin. Flag: INFORM > 6.5 AND ACLED 30d > 20 AND IPC Phase 3+. Trigger WorldFish for CRITICAL scenarios."
+}
