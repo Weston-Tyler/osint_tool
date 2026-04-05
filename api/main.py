@@ -3,6 +3,7 @@
 REST + WebSocket API for querying the MDA graph, spatial, and search layers.
 """
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 
@@ -11,7 +12,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from gqlalchemy import Memgraph
 
-from api.routers import analytics, uas, vessels
+from api.routers import analytics, uas, vessels, websocket
+from api.services.metrics import MetricsMiddleware, router as metrics_router
 
 
 @asynccontextmanager
@@ -31,8 +33,12 @@ async def lifespan(app: FastAPI):
         min_size=5,
         max_size=20,
     )
+
+    # Start WebSocket Kafka alert broadcaster as background task
+    ws_task = asyncio.create_task(websocket.kafka_alert_consumer())
     yield
     # Shutdown
+    ws_task.cancel()
     await app.state.postgres_pool.close()
 
 
@@ -45,15 +51,20 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Tighten in Phase 4 with Keycloak
+    allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Prometheus metrics middleware
+app.add_middleware(MetricsMiddleware)
 
 # Register routers
 app.include_router(vessels.router, prefix="/v1", tags=["vessels"])
 app.include_router(uas.router, prefix="/v1", tags=["uas"])
 app.include_router(analytics.router, prefix="/v1", tags=["analytics"])
+app.include_router(websocket.router, prefix="/v1", tags=["websocket"])
+app.include_router(metrics_router, tags=["metrics"])
 
 
 @app.get("/health")

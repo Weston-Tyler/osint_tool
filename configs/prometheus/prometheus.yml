@@ -1,0 +1,29 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: mda-api
+    static_configs:
+      - targets: ["mda-api:8000"]
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  - job_name: traefik
+    static_configs:
+      - targets: ["mda-traefik:8082"]
+
+  - job_name: redpanda
+    static_configs:
+      - targets: ["mda-redpanda:9644"]
+    metrics_path: /public_metrics
+
+  - job_name: postgres
+    static_configs:
+      - targets: ["mda-postgres:9187"]
+    # Requires postgres_exporter sidecar
+
+  - job_name: node
+    static_configs:
+      - targets: ["localhost:9100"]
+    # Requires node_exporter

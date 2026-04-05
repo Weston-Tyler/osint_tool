@@ -1,0 +1,60 @@
+# Traefik reverse proxy configuration for MDA
+# Provides TLS termination, routing, and rate limiting
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  websecure:
+    address: ":443"
+    http:
+      tls:
+        certResolver: letsencrypt
+  metrics:
+    address: ":8082"
+
+api:
+  dashboard: true
+  insecure: false
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: mda-net
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: "${ACME_EMAIL:-admin@mda.local}"
+      storage: /certs/acme.json
+      httpChallenge:
+        entryPoint: web
+
+# Self-signed for development (disable ACME above)
+# tls:
+#   stores:
+#     default:
+#       defaultCertificate:
+#         certFile: /certs/server.crt
+#         keyFile: /certs/server.key
+
+log:
+  level: WARN
+
+accessLog:
+  filePath: /var/log/traefik/access.log
+  bufferingSize: 100
+
+metrics:
+  prometheus:
+    entryPoint: metrics
+    addEntryPointsLabels: true
+    addServicesLabels: true

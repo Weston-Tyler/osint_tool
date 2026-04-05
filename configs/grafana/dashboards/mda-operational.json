@@ -1,0 +1,162 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "mda-operational",
+    "title": "MDA Operational Dashboard",
+    "tags": ["mda", "operational"],
+    "timezone": "utc",
+    "refresh": "30s",
+    "time": { "from": "now-24h", "to": "now" },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Vessels in Graph",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+        "targets": [
+          {
+            "rawSql": "SELECT count(*) FROM ag_catalog.cypher('mda', $$ MATCH (v:Vessel) RETURN count(v) AS cnt $$) AS (cnt agtype);",
+            "datasource": "PostgreSQL",
+            "format": "table"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Sanctioned Vessels",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+        "fieldConfig": {
+          "defaults": { "color": { "mode": "fixed", "fixedColor": "red" } }
+        },
+        "targets": [
+          {
+            "rawSql": "SELECT count(*) FROM ag_catalog.cypher('mda', $$ MATCH (v:Vessel) WHERE v.sanctions_status = 'SANCTIONED' RETURN count(v) AS cnt $$) AS (cnt agtype);",
+            "datasource": "PostgreSQL",
+            "format": "table"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "High Risk Vessels (>7.0)",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+        "fieldConfig": {
+          "defaults": { "color": { "mode": "fixed", "fixedColor": "orange" } }
+        },
+        "targets": [
+          {
+            "rawSql": "SELECT count(*) FROM ag_catalog.cypher('mda', $$ MATCH (v:Vessel) WHERE v.risk_score >= 7.0 RETURN count(v) AS cnt $$) AS (cnt agtype);",
+            "datasource": "PostgreSQL",
+            "format": "table"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "AIS Positions (24h)",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+        "targets": [
+          {
+            "rawSql": "SELECT count(*) FROM ais_positions WHERE valid_time >= NOW() - INTERVAL '24 hours';",
+            "datasource": "PostgreSQL",
+            "format": "table"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "UAS Detections (24h)",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+        "targets": [
+          {
+            "rawSql": "SELECT count(*) FROM ag_catalog.cypher('mda', $$ MATCH (e:UAS_Detection_Event) RETURN count(e) AS cnt $$) AS (cnt agtype);",
+            "datasource": "PostgreSQL",
+            "format": "table"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Persons in Graph",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+        "targets": [
+          {
+            "rawSql": "SELECT count(*) FROM ag_catalog.cypher('mda', $$ MATCH (p:Person) RETURN count(p) AS cnt $$) AS (cnt agtype);",
+            "datasource": "PostgreSQL",
+            "format": "table"
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "AIS Positions Over Time",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+        "targets": [
+          {
+            "rawSql": "SELECT date_trunc('hour', valid_time) AS time, count(*) AS positions FROM ais_positions WHERE valid_time >= NOW() - INTERVAL '7 days' GROUP BY 1 ORDER BY 1;",
+            "datasource": "PostgreSQL",
+            "format": "time_series"
+          }
+        ]
+      },
+      {
+        "id": 11,
+        "title": "Interdiction Events (Last 12 Months)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+        "targets": [
+          {
+            "rawSql": "SELECT date_trunc('week', event_time) AS time, count(*) AS interdictions FROM interdiction_locations WHERE event_time >= NOW() - INTERVAL '12 months' GROUP BY 1 ORDER BY 1;",
+            "datasource": "PostgreSQL",
+            "format": "time_series"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "title": "Vessel Risk Score Distribution",
+        "type": "barchart",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+        "targets": [
+          {
+            "rawSql": "SELECT width_bucket(risk_score, 0, 10, 10) AS bucket, count(*) FROM (SELECT (v->>'risk_score')::float AS risk_score FROM ag_catalog.cypher('mda', $$ MATCH (v:Vessel) WHERE v.risk_score IS NOT NULL RETURN v.risk_score AS risk_score $$) AS (risk_score agtype), LATERAL (SELECT risk_score::text::float AS risk_score) v) sub GROUP BY 1 ORDER BY 1;",
+            "datasource": "PostgreSQL",
+            "format": "table"
+          }
+        ]
+      },
+      {
+        "id": 21,
+        "title": "Interdiction Locations",
+        "type": "geomap",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+        "options": {
+          "view": { "id": "coords", "lat": 10, "lon": -80, "zoom": 3 },
+          "basemap": { "type": "default" },
+          "layers": [
+            {
+              "type": "markers",
+              "config": {
+                "style": { "size": { "fixed": 5 }, "color": { "fixed": "red" } }
+              }
+            }
+          ]
+        },
+        "targets": [
+          {
+            "rawSql": "SELECT event_id, event_time AS time, ST_Y(location) AS latitude, ST_X(location) AS longitude FROM interdiction_locations WHERE event_time >= NOW() - INTERVAL '12 months' LIMIT 500;",
+            "datasource": "PostgreSQL",
+            "format": "table"
+          }
+        ]
+      }
+    ]
+  },
+  "overwrite": true
+}

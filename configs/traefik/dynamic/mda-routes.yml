@@ -1,0 +1,72 @@
+# Dynamic routing rules for MDA services
+http:
+  routers:
+    mda-api:
+      rule: "PathPrefix(`/v1`) || PathPrefix(`/health`) || PathPrefix(`/metrics`)"
+      service: mda-api
+      entryPoints:
+        - websecure
+      middlewares:
+        - rate-limit
+        - security-headers
+
+    mda-grafana:
+      rule: "PathPrefix(`/grafana`)"
+      service: mda-grafana
+      entryPoints:
+        - websecure
+      middlewares:
+        - strip-grafana-prefix
+
+    mda-geoserver:
+      rule: "PathPrefix(`/geoserver`)"
+      service: mda-geoserver
+      entryPoints:
+        - websecure
+
+    mda-keycloak:
+      rule: "PathPrefix(`/auth`)"
+      service: mda-keycloak
+      entryPoints:
+        - websecure
+
+  services:
+    mda-api:
+      loadBalancer:
+        servers:
+          - url: "http://mda-api:8000"
+    mda-grafana:
+      loadBalancer:
+        servers:
+          - url: "http://mda-grafana:3000"
+    mda-geoserver:
+      loadBalancer:
+        servers:
+          - url: "http://mda-geoserver:8080"
+    mda-keycloak:
+      loadBalancer:
+        servers:
+          - url: "http://mda-keycloak:8443"
+
+  middlewares:
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 200
+        period: 1s
+
+    security-headers:
+      headers:
+        frameDeny: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 31536000
+        customResponseHeaders:
+          X-MDA-Version: "0.1.0"
+
+    strip-grafana-prefix:
+      stripPrefix:
+        prefixes:
+          - /grafana

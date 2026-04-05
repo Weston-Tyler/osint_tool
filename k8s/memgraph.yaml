@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memgraph
+  namespace: mda
+spec:
+  serviceName: memgraph
+  replicas: 1
+  selector:
+    matchLabels:
+      app: memgraph
+  template:
+    metadata:
+      labels:
+        app: memgraph
+    spec:
+      containers:
+        - name: memgraph
+          image: memgraph/memgraph-platform:2.14.0
+          ports:
+            - containerPort: 7687
+              name: bolt
+            - containerPort: 7444
+              name: https
+            - containerPort: 3000
+              name: lab
+          env:
+            - name: MEMGRAPH_MEMORY_LIMIT
+              value: "40960"
+            - name: MEMGRAPH_LOG_LEVEL
+              value: WARNING
+          resources:
+            requests:
+              memory: "32Gi"
+              cpu: "8"
+            limits:
+              memory: "48Gi"
+              cpu: "16"
+          volumeMounts:
+            - name: memgraph-data
+              mountPath: /var/lib/memgraph
+          readinessProbe:
+            tcpSocket:
+              port: 7687
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 7687
+            initialDelaySeconds: 30
+            periodSeconds: 30
+  volumeClaimTemplates:
+    - metadata:
+        name: memgraph-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 100Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: memgraph
+  namespace: mda
+spec:
+  selector:
+    app: memgraph
+  ports:
+    - port: 7687
+      targetPort: bolt
+      name: bolt
+    - port: 3000
+      targetPort: lab
+      name: lab

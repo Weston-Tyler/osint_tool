@@ -362,6 +362,62 @@ services:
       - mda-net
 
   # ============================================================
+  # NLP PIPELINE — spaCy NER service
+  # ============================================================
+  nlp-service:
+    build:
+      context: ./services/nlp
+      dockerfile: Dockerfile
+    container_name: mda-nlp
+    restart: unless-stopped
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+      MODEL_PATH: en_core_web_sm
+    depends_on:
+      - redpanda
+    networks:
+      - mda-net
+
+  # ============================================================
+  # CORRELATION ENGINE — cross-domain event correlator
+  # ============================================================
+  correlator:
+    build:
+      context: ./processors/graph
+      dockerfile: Dockerfile
+    container_name: mda-correlator
+    restart: unless-stopped
+    command: ["python", "-u", "correlator.py"]
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+      MEMGRAPH_HOST: memgraph
+      MEMGRAPH_PORT: "7687"
+    depends_on:
+      memgraph:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    networks:
+      - mda-net
+
+  # ============================================================
+  # DLQ PROCESSOR — dead letter queue handler
+  # ============================================================
+  dlq-processor:
+    build:
+      context: ./processors/graph
+      dockerfile: Dockerfile
+    container_name: mda-dlq-processor
+    restart: unless-stopped
+    command: ["python", "-u", "dlq_processor.py"]
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+    depends_on:
+      - redpanda
+    networks:
+      - mda-net
+
+  # ============================================================
   # DASHBOARDS — Grafana
   # Port 3001: Web UI
   # ============================================================
