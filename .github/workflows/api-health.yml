@@ -1,0 +1,53 @@
+name: External API Health Check
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  api-health:
+    name: Data Source API Reachability
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check GDELT
+        run: curl -sf --max-time 15 -o /dev/null http://data.gdeltproject.org/gdeltv2/masterfilelist.txt
+        continue-on-error: true
+
+      - name: Check OFAC SDN
+        run: curl -sf --max-time 15 -o /dev/null -I https://www.treasury.gov/ofac/downloads/sanctions/1.0/sdn_advanced.json
+        continue-on-error: true
+
+      - name: Check OpenSanctions
+        run: curl -sf --max-time 15 -o /dev/null -I https://data.opensanctions.org/datasets/latest/default/entities.ftm.json
+        continue-on-error: true
+
+      - name: Check ReliefWeb
+        run: curl -sf --max-time 15 -o /dev/null 'https://api.reliefweb.int/v1/reports?limit=1'
+        continue-on-error: true
+
+      - name: Check CoinGecko
+        run: curl -sf --max-time 15 -o /dev/null https://api.coingecko.com/api/v3/ping
+        continue-on-error: true
+
+      - name: Check World Bank
+        run: curl -sf --max-time 15 -o /dev/null 'https://api.worldbank.org/v2/country/MX/indicator/NY.GDP.MKTP.CD?format=json&per_page=1'
+        continue-on-error: true
+
+      - name: Check UNHCR
+        run: curl -sf --max-time 15 -o /dev/null 'https://api.unhcr.org/population/v1/population/?limit=1'
+        continue-on-error: true
+
+      - name: Check UN Comtrade
+        run: curl -sf --max-time 15 -o /dev/null -I https://comtradeapi.un.org/public/v1/preview/C/A/HS
+        continue-on-error: true
+
+      - name: Check GDELT DOC API
+        run: curl -sf --max-time 15 -o /dev/null 'https://api.gdeltproject.org/api/v2/doc/doc?query=test&mode=artlist&format=json&maxrecords=1'
+        continue-on-error: true
+
+      - name: Check NASA FIRMS
+        run: curl -sf --max-time 15 -o /dev/null https://firms.modaps.eosdis.nasa.gov/api/
+        continue-on-error: true
