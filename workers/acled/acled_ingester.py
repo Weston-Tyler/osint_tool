@@ -200,7 +200,7 @@ class ACLEDIngester:
             "assoc_actor1": raw.get("assoc_actor_1", ""),
             "assoc_actor2": raw.get("assoc_actor_2", ""),
             "interaction": raw.get("interaction", ""),
-            "source": raw.get("source", ""),
+            "acled_source": raw.get("source", ""),
             "source_scale": raw.get("source_scale", ""),
             "notes": raw.get("notes", ""),
             "confidence": _estimate_confidence(raw),
