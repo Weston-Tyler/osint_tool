@@ -40,7 +40,16 @@ setup: up ## Full setup: start services, create topics, ES indices, init DB
 # ---- Development ----
 
 test: ## Run unit tests
-	python -m pytest tests/ -v --tb=short
+	python -m pytest tests/unit/ -v --tb=short
+
+smoke-test: ## Run smoke tests (all ingesters)
+	python -m pytest tests/smoke/ -v --tb=short
+
+verify: ## Full system verification (requires running stack)
+	./scripts/verify-system.sh
+
+verify-quick: ## Quick verification (skip live data fetches)
+	./scripts/verify-system.sh --quick
 
 lint: ## Run linter
 	ruff check .
