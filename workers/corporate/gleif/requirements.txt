@@ -1,0 +1,4 @@
+kafka-python>=2.0.2
+gqlalchemy>=1.6.0
+lxml>=5.1.0
+aiohttp>=3.9.0
