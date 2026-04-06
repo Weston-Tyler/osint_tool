@@ -1,0 +1,53 @@
+{
+  "name": "MDA OSINT Database",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12-bookworm",
+
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/node:1": {"version": "20"}
+  },
+
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "16gb",
+    "storage": "64gb"
+  },
+
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+
+  "forwardPorts": [
+    8000,  3000,  3001,  5432,  7687,
+    8080,  8085,  9000,  9001,  9092,
+    9200,  19092
+  ],
+
+  "portsAttributes": {
+    "8000": {"label": "MDA API (FastAPI)", "onAutoForward": "notify"},
+    "3000": {"label": "Memgraph Lab", "onAutoForward": "notify"},
+    "3001": {"label": "Grafana", "onAutoForward": "notify"},
+    "8080": {"label": "Redpanda Console", "onAutoForward": "notify"},
+    "8085": {"label": "GeoServer", "onAutoForward": "notify"},
+    "9001": {"label": "MinIO Console", "onAutoForward": "notify"}
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "ms-azuretools.vscode-docker",
+        "redhat.vscode-yaml"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.testing.pytestEnabled": true,
+        "python.testing.pytestArgs": ["tests/unit/"],
+        "editor.formatOnSave": true,
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff"
+        }
+      }
+    }
+  }
+}
