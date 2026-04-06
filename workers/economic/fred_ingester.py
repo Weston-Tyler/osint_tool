@@ -50,7 +50,6 @@ class FREDIngester:
         "APU0000708111": "CPI Eggs (monthly)",
         # Metals & safe havens
         "GOLDAMGBD228NLBM": "Gold London Fix (daily)",
-        "DCOILWTICO": "Crude Oil WTI (daily)",
         # Currency & trade
         "DTWEXBGS": "Trade-Weighted US Dollar Index (daily)",
         "DEXMXUS": "MXN/USD Exchange Rate (daily)",

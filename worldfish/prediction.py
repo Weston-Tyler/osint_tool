@@ -20,10 +20,14 @@ class PredictionConfidence(Enum):
 
     @classmethod
     def from_float(cls, v: float) -> PredictionConfidence:
-        if v < 0.20: return cls.VERY_LOW
-        if v < 0.40: return cls.LOW
-        if v < 0.60: return cls.MODERATE
-        if v < 0.80: return cls.HIGH
+        if v < 0.20:
+            return cls.VERY_LOW
+        if v < 0.40:
+            return cls.LOW
+        if v < 0.60:
+            return cls.MODERATE
+        if v < 0.80:
+            return cls.HIGH
         return cls.VERY_HIGH
 
 

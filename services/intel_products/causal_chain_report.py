@@ -64,7 +64,7 @@ class CausalChainReport:
 
     def to_markdown(self) -> str:
         lines = [
-            f"# Causal Chain Report",
+            "# Causal Chain Report",
             f"**Generated:** {self.generated_at}",
             f"**Trigger:** {self.trigger_event_type} — {self.trigger_region} ({self.trigger_occurred_at[:10]})",
             f"**Historical Precedents:** {self.supporting_instances}",

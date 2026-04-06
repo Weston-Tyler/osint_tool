@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+import pandas as pd
 from gqlalchemy import Memgraph
 from hdx.api.configuration import Configuration
 from hdx.data.dataset import Dataset
