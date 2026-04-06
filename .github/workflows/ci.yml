@@ -11,7 +11,6 @@ env:
 
 jobs:
 
-  # ── 1. Lint ──────────────────────────────────────────────────
   lint:
     name: Lint (ruff)
     runs-on: ubuntu-latest
@@ -23,7 +22,6 @@ jobs:
       - run: pip install ruff
       - run: ruff check . --output-format=github
 
-  # ── 2. Unit Tests ────────────────────────────────────────────
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
@@ -32,53 +30,61 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - name: Install dependencies
+      - name: Install deps and stubs
         run: |
           pip install pytest pydantic kafka-python requests spacy numpy pandas statsmodels
-          # Stub out gqlalchemy (needs C lib that can't compile here)
           SITE=$(python -c "import site; print(site.getsitepackages()[0])")
-          mkdir -p "$SITE/gqlalchemy"
-          cat > "$SITE/gqlalchemy/__init__.py" << 'STUB'
+          python -c "
+          import os, pathlib
+          site = '$SITE'
+          # gqlalchemy stub
+          os.makedirs(f'{site}/gqlalchemy', exist_ok=True)
+          pathlib.Path(f'{site}/gqlalchemy/__init__.py').write_text('''
           class Memgraph:
               def __init__(self, *a, **kw): pass
               def execute(self, *a, **kw): pass
               def execute_and_fetch(self, *a, **kw): return []
-          STUB
-          # Stub out ollama
-          cat > "$SITE/ollama.py" << 'STUB'
+          ''')
+          # ollama stub
+          pathlib.Path(f'{site}/ollama.py').write_text('''
           class Client:
               def __init__(self, *a, **kw): pass
-              def generate(self, *a, **kw): return {"response": "{}"}
-          STUB
-          # Stub out mesa
-          mkdir -p "$SITE/mesa"
-          cat > "$SITE/mesa/__init__.py" << 'STUB'
+              def generate(self, *a, **kw): return {\"response\": \"{}\"}
+          ''')
+          # mesa stub
+          os.makedirs(f'{site}/mesa/time', exist_ok=True)
+          pathlib.Path(f'{site}/mesa/__init__.py').write_text('''
           class Agent:
-              def __init__(self, unique_id, model): self.unique_id = unique_id; self.model = model
+              def __init__(self, unique_id, model):
+                  self.unique_id = unique_id
+                  self.model = model
           class Model:
               def __init__(self): pass
           class DataCollector:
               def __init__(self, **kw): pass
               def collect(self, m): pass
-              def get_model_vars_dataframe(self): import pandas; return pandas.DataFrame()
-          STUB
-          mkdir -p "$SITE/mesa/time"
-          cat > "$SITE/mesa/time/__init__.py" << 'STUB'
+              def get_model_vars_dataframe(self):
+                  import pandas
+                  return pandas.DataFrame()
+          ''')
+          pathlib.Path(f'{site}/mesa/time/__init__.py').write_text('''
           class RandomActivation:
-              def __init__(self, model): self.agents = []; self.steps = 0
+              def __init__(self, model):
+                  self.agents = []
+                  self.steps = 0
               def add(self, agent): self.agents.append(agent)
               def step(self): self.steps += 1
-          STUB
+          ''')
+          print('Stubs installed to', site)
+          "
       - name: Run unit tests
         run: python -m pytest tests/unit/ -v --tb=short --junitxml=test-results.xml
-      - name: Upload test results
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
           name: unit-test-results
           path: test-results.xml
 
-  # ── 3. Docker Build ──────────────────────────────────────────
   docker-build:
     name: Docker Build (${{ matrix.service }})
     runs-on: ubuntu-latest
@@ -105,39 +111,27 @@ jobs:
           - worldfish
     steps:
       - uses: actions/checkout@v4
-      - name: Check Dockerfile exists
-        id: check
+      - name: Build image
         run: |
           if [ -f "${{ matrix.service }}/Dockerfile" ]; then
-            echo "exists=true" >> $GITHUB_OUTPUT
+            docker build -t mda-test ${{ matrix.service }}
           else
-            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "No Dockerfile — skipping"
           fi
-      - name: Build Docker image
-        if: steps.check.outputs.exists == 'true'
-        run: docker build -t mda-test ${{ matrix.service }}
 
-  # ── 4. Schema + Config Validation ────────────────────────────
   validate:
     name: Schema & Config Validation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate JSON files
+      - name: Validate JSON
         run: |
-          FAIL=0
-          find . -name "*.json" -not -path './.git/*' | while read f; do
-            python3 -c "import json; json.load(open('$f'))" 2>/dev/null || { echo "FAIL: $f"; FAIL=1; }
-          done
-          exit $FAIL
-      - name: Validate YAML files
+          find . -name "*.json" -not -path './.git/*' -exec python3 -c "import json,sys; json.load(open(sys.argv[1]))" {} \;
+      - name: Validate YAML
         run: |
-          pip install pyyaml -q
-          find . \( -name "*.yml" -o -name "*.yaml" \) -not -path './.git/*' | while read f; do
-            python3 -c "import yaml; list(yaml.safe_load_all(open('$f')))" 2>/dev/null || { echo "FAIL: $f"; exit 1; }
-          done
+          pip install -q pyyaml
+          find . \( -name "*.yml" -o -name "*.yaml" \) -not -path './.git/*' -exec python3 -c "import yaml,sys; list(yaml.safe_load_all(open(sys.argv[1])))" {} \;
 
-  # ── 5. Docker Compose Validation ─────────────────────────────
   compose:
     name: Docker Compose Validation
     runs-on: ubuntu-latest
