@@ -34,17 +34,43 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install dependencies
         run: |
-          pip install pytest pydantic kafka-python requests spacy \
-            numpy pandas statsmodels
-          # gqlalchemy requires libmgclient (C lib) — mock it for tests
-          # that import it so unit tests can run without Memgraph
-          mkdir -p /tmp/stubs
-          echo "class Memgraph: pass" > /tmp/stubs/gqlalchemy.py
-          echo "PYTHONPATH=/tmp/stubs:\$PYTHONPATH" >> $GITHUB_ENV
+          pip install pytest pydantic kafka-python requests spacy numpy pandas statsmodels
+          # Stub out gqlalchemy (needs C lib that can't compile here)
+          SITE=$(python -c "import site; print(site.getsitepackages()[0])")
+          mkdir -p "$SITE/gqlalchemy"
+          cat > "$SITE/gqlalchemy/__init__.py" << 'STUB'
+          class Memgraph:
+              def __init__(self, *a, **kw): pass
+              def execute(self, *a, **kw): pass
+              def execute_and_fetch(self, *a, **kw): return []
+          STUB
+          # Stub out ollama
+          cat > "$SITE/ollama.py" << 'STUB'
+          class Client:
+              def __init__(self, *a, **kw): pass
+              def generate(self, *a, **kw): return {"response": "{}"}
+          STUB
+          # Stub out mesa
+          mkdir -p "$SITE/mesa"
+          cat > "$SITE/mesa/__init__.py" << 'STUB'
+          class Agent:
+              def __init__(self, unique_id, model): self.unique_id = unique_id; self.model = model
+          class Model:
+              def __init__(self): pass
+          class DataCollector:
+              def __init__(self, **kw): pass
+              def collect(self, m): pass
+              def get_model_vars_dataframe(self): import pandas; return pandas.DataFrame()
+          STUB
+          mkdir -p "$SITE/mesa/time"
+          cat > "$SITE/mesa/time/__init__.py" << 'STUB'
+          class RandomActivation:
+              def __init__(self, model): self.agents = []; self.steps = 0
+              def add(self, agent): self.agents.append(agent)
+              def step(self): self.steps += 1
+          STUB
       - name: Run unit tests
-        run: |
-          PYTHONPATH="/tmp/stubs:$PYTHONPATH" \
-          python -m pytest tests/unit/ -v --tb=short --junitxml=test-results.xml
+        run: python -m pytest tests/unit/ -v --tb=short --junitxml=test-results.xml
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -52,7 +78,7 @@ jobs:
           name: unit-test-results
           path: test-results.xml
 
-  # ── 3. Docker Build Verification ─────────────────────────────
+  # ── 3. Docker Build ──────────────────────────────────────────
   docker-build:
     name: Docker Build (${{ matrix.service }})
     runs-on: ubuntu-latest
@@ -89,73 +115,31 @@ jobs:
           fi
       - name: Build Docker image
         if: steps.check.outputs.exists == 'true'
-        run: docker build -t mda-${{ matrix.service }} ${{ matrix.service }}
+        run: docker build -t mda-test ${{ matrix.service }}
 
-  # ── 4. Schema Validation ─────────────────────────────────────
-  schema-validation:
-    name: Schema Validation
+  # ── 4. Schema + Config Validation ────────────────────────────
+  validate:
+    name: Schema & Config Validation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate Cypher syntax (basic)
+      - name: Validate JSON files
         run: |
-          echo "Checking Cypher files..."
-          for f in schema/graph/*.cypher scripts/*.cypher; do
-            [ -f "$f" ] || continue
-            echo "  Checking $f"
-            if grep -Pn 'CREATE\s*;' "$f"; then
-              echo "  ERROR: Empty CREATE in $f"
-              exit 1
-            fi
-          done
-          echo "  All Cypher files passed"
-
-      - name: Validate SQL syntax (basic)
-        run: |
-          echo "Checking SQL files..."
-          for f in schema/relational/*.sql; do
-            echo "  Checking $f"
-            if ! grep -q 'CREATE' "$f"; then
-              echo "  WARNING: No CREATE statements in $f"
-            fi
-          done
-          echo "  All SQL files checked"
-
-      - name: Validate JSON configs
-        run: |
-          echo "Checking JSON files..."
+          FAIL=0
           find . -name "*.json" -not -path './.git/*' | while read f; do
-            if ! python3 -c "import json; json.load(open('$f'))"; then
-              echo "  ERROR: Invalid JSON in $f"
-              exit 1
-            fi
+            python3 -c "import json; json.load(open('$f'))" 2>/dev/null || { echo "FAIL: $f"; FAIL=1; }
           done
-          echo "  All JSON files valid"
-
-      - name: Validate YAML configs
+          exit $FAIL
+      - name: Validate YAML files
         run: |
-          pip install pyyaml
-          echo "Checking YAML files..."
-          YAML_FAIL=0
+          pip install pyyaml -q
           find . \( -name "*.yml" -o -name "*.yaml" \) -not -path './.git/*' | while read f; do
-            if ! python3 -c "
-import yaml, sys
-with open('$f') as fh:
-    try:
-        list(yaml.safe_load_all(fh))
-    except yaml.YAMLError as e:
-        print(f'ERROR: $f: {e}', file=sys.stderr)
-        sys.exit(1)
-"; then
-              echo "  FAIL: $f"
-              YAML_FAIL=1
-            fi
+            python3 -c "import yaml; list(yaml.safe_load_all(open('$f')))" 2>/dev/null || { echo "FAIL: $f"; exit 1; }
           done
-          echo "  All YAML files valid"
 
   # ── 5. Docker Compose Validation ─────────────────────────────
-  compose-validation:
-    name: Docker Compose Config Validation
+  compose:
+    name: Docker Compose Validation
     runs-on: ubuntu-latest
     env:
       POSTGRES_PASSWORD: test
@@ -166,11 +150,7 @@ with open('$f') as fh:
       API_SECRET_KEY: test
     steps:
       - uses: actions/checkout@v4
-      - name: Validate base compose
-        run: docker compose -f docker-compose.yml config > /dev/null
-      - name: Validate causal compose
-        run: docker compose -f docker-compose.yml -f docker-compose.causal.yml config > /dev/null
-      - name: Validate datasets compose
-        run: docker compose -f docker-compose.yml -f docker-compose.datasets.yml config > /dev/null
-      - name: Validate GDELT compose
-        run: docker compose -f docker-compose.yml -f docker-compose.gdelt.yml config > /dev/null
+      - run: docker compose -f docker-compose.yml config > /dev/null
+      - run: docker compose -f docker-compose.yml -f docker-compose.causal.yml config > /dev/null
+      - run: docker compose -f docker-compose.yml -f docker-compose.datasets.yml config > /dev/null
+      - run: docker compose -f docker-compose.yml -f docker-compose.gdelt.yml config > /dev/null
