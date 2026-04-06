@@ -5,6 +5,7 @@ the MDA database. Enforces PII exclusion, source attribution, and schema
 conformance.
 """
 
+import json
 import logging
 import re
 from datetime import datetime
