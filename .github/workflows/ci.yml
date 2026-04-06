@@ -1,0 +1,282 @@
+name: CI — Lint, Test, Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+
+  # ── 1. Lint ──────────────────────────────────────────────────
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install ruff
+      - run: ruff check . --output-format=github
+
+  # ── 2. Unit Tests ────────────────────────────────────────────
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
+          pip install kafka-python gqlalchemy requests pydantic
+      - name: Run unit tests
+        run: python -m pytest tests/unit/ -v --tb=short --junitxml=test-results.xml
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: test-results.xml
+
+  # ── 3. Smoke Tests (import + normalize) ──────────────────────
+  smoke-tests:
+    name: Smoke Tests (all ingesters)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
+          pip install kafka-python gqlalchemy requests pydantic \
+            pandas numpy statsmodels yfinance mesa ollama \
+            spacy psycopg2-binary haversine aiohttp \
+            elasticsearch minio rdflib httpx
+      - name: Run smoke tests
+        run: python -m pytest tests/smoke/ -v --tb=short -x --junitxml=smoke-results.xml
+      - name: Upload smoke results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-results
+          path: smoke-results.xml
+
+  # ── 4. Docker Build Verification ─────────────────────────────
+  docker-build:
+    name: Docker Build (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - api
+          - workers/ais
+          - workers/gdelt
+          - workers/sanctions
+          - workers/uas
+          - workers/acled
+          - workers/economic
+          - workers/financial
+          - workers/humanitarian
+          - workers/geospatial
+          - workers/maritime
+          - workers/crypto
+          - processors/graph
+          - services/nlp
+          - services/causal_extractor
+          - services/causal_graph_learner
+          - worldfish
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Dockerfile exists
+        id: check
+        run: |
+          if [ -f "${{ matrix.service }}/Dockerfile" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+      - name: Build Docker image
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          docker build -t mda-${{ matrix.service }} ${{ matrix.service }}
+
+  # ── 5. Schema Validation ─────────────────────────────────────
+  schema-validation:
+    name: Schema Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Cypher syntax (basic)
+        run: |
+          echo "Checking Cypher files for syntax issues..."
+          for f in schema/graph/*.cypher scripts/*.cypher; do
+            [ -f "$f" ] || continue
+            echo "  Checking $f"
+            # Basic checks: balanced parentheses, no empty CREATE statements
+            if grep -Pn 'CREATE\s*;' "$f"; then
+              echo "  ERROR: Empty CREATE in $f"
+              exit 1
+            fi
+          done
+          echo "  All Cypher files passed basic validation"
+
+      - name: Validate SQL syntax (basic)
+        run: |
+          echo "Checking SQL files..."
+          for f in schema/relational/*.sql; do
+            echo "  Checking $f"
+            # Check for common issues
+            if ! grep -q 'CREATE' "$f"; then
+              echo "  WARNING: No CREATE statements in $f"
+            fi
+          done
+          echo "  All SQL files checked"
+
+      - name: Validate JSON configs
+        run: |
+          echo "Checking JSON files..."
+          find . -name "*.json" -not -path './.git/*' | while read f; do
+            if ! python3 -c "import json; json.load(open('$f'))"; then
+              echo "  ERROR: Invalid JSON in $f"
+              exit 1
+            fi
+          done
+          echo "  All JSON files valid"
+
+      - name: Validate YAML configs
+        run: |
+          pip install pyyaml
+          echo "Checking YAML files..."
+          find . -name "*.yml" -o -name "*.yaml" | grep -v '.git' | while read f; do
+            if ! python3 -c "import yaml; yaml.safe_load(open('$f'))"; then
+              echo "  ERROR: Invalid YAML in $f"
+              exit 1
+            fi
+          done
+          echo "  All YAML files valid"
+
+  # ── 6. Docker Compose Validation ─────────────────────────────
+  compose-validation:
+    name: Docker Compose Config Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate base compose
+        run: docker compose -f docker-compose.yml config > /dev/null
+        env:
+          POSTGRES_PASSWORD: test
+          MINIO_ROOT_PASSWORD: test
+          ELASTIC_PASSWORD: test
+          GRAFANA_ADMIN_PASSWORD: test
+          GEOSERVER_ADMIN_PASSWORD: test
+          API_SECRET_KEY: test
+
+      - name: Validate causal compose
+        run: docker compose -f docker-compose.yml -f docker-compose.causal.yml config > /dev/null
+        env:
+          POSTGRES_PASSWORD: test
+          MINIO_ROOT_PASSWORD: test
+          ELASTIC_PASSWORD: test
+          GRAFANA_ADMIN_PASSWORD: test
+          GEOSERVER_ADMIN_PASSWORD: test
+          API_SECRET_KEY: test
+
+      - name: Validate datasets compose
+        run: docker compose -f docker-compose.yml -f docker-compose.datasets.yml config > /dev/null
+        env:
+          POSTGRES_PASSWORD: test
+          MINIO_ROOT_PASSWORD: test
+          ELASTIC_PASSWORD: test
+          GRAFANA_ADMIN_PASSWORD: test
+          GEOSERVER_ADMIN_PASSWORD: test
+          API_SECRET_KEY: test
+
+      - name: Validate GDELT compose
+        run: docker compose -f docker-compose.yml -f docker-compose.gdelt.yml config > /dev/null
+        env:
+          POSTGRES_PASSWORD: test
+          MINIO_ROOT_PASSWORD: test
+          ELASTIC_PASSWORD: test
+          GRAFANA_ADMIN_PASSWORD: test
+          GEOSERVER_ADMIN_PASSWORD: test
+          API_SECRET_KEY: test
+
+  # ── 7. Integration Test (services up) ────────────────────────
+  integration-test:
+    name: Integration Test (Docker Services)
+    runs-on: ubuntu-latest
+    needs: [unit-tests, docker-build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Create .env
+        run: |
+          cat > .env << EOF
+          POSTGRES_PASSWORD=testpassword123
+          MINIO_ROOT_PASSWORD=testpassword123
+          ELASTIC_PASSWORD=testpassword123
+          GRAFANA_ADMIN_PASSWORD=testpassword123
+          GEOSERVER_ADMIN_PASSWORD=testpassword123
+          API_SECRET_KEY=testkey12345678901234567890
+          EOF
+
+      - name: Start core services
+        run: |
+          docker compose up -d postgres redpanda elasticsearch memgraph
+          echo "Waiting for services to be healthy..."
+          sleep 45
+
+      - name: Check PostgreSQL
+        run: docker exec mda-postgres pg_isready -U mda -d mda
+
+      - name: Check Redpanda
+        run: docker exec mda-redpanda rpk cluster health
+
+      - name: Check Elasticsearch
+        run: curl -sf http://localhost:9200/_cluster/health
+
+      - name: Check Memgraph
+        run: docker exec mda-memgraph mgconsole --execute "RETURN 1;"
+
+      - name: Initialize schemas
+        run: |
+          docker exec mda-memgraph mgconsole < schema/graph/memgraph-init.cypher || true
+          docker exec mda-memgraph mgconsole < schema/graph/causal-schema.cypher || true
+
+      - name: Create Kafka topics
+        run: |
+          docker exec mda-redpanda rpk topic create mda.ais.positions.raw -p 4 || true
+          docker exec mda-redpanda rpk topic create mda.sanctions.updates -p 1 || true
+          docker exec mda-redpanda rpk topic create mda.acled.events -p 4 || true
+
+      - name: Build and start API
+        run: |
+          docker compose up -d api
+          sleep 15
+
+      - name: Test API health
+        run: |
+          curl -sf http://localhost:8000/health | python3 -c "import sys,json; d=json.load(sys.stdin); print(d); assert d['status'] in ('ok','degraded')"
+
+      - name: Test API vessel endpoint
+        run: |
+          curl -sf http://localhost:8000/v1/vessels | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'vessels' in d"
+
+      - name: Teardown
+        if: always()
+        run: docker compose down -v

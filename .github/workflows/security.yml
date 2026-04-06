@@ -1,0 +1,90 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly Monday 6am UTC
+
+jobs:
+
+  # ── Secret Scanning ──────────────────────────────────────────
+  secrets:
+    name: Secret Detection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan for hardcoded secrets
+        run: |
+          echo "Scanning for hardcoded passwords/keys..."
+          FOUND=0
+
+          # Check for common secret patterns
+          for pattern in \
+            'password\s*=\s*"[^"]{8,}"' \
+            'api_key\s*=\s*"[^"]{8,}"' \
+            'secret\s*=\s*"[^"]{8,}"' \
+            'PRIVATE_KEY' \
+            'BEGIN RSA' \
+            'BEGIN OPENSSH'; do
+
+            matches=$(grep -rn --include="*.py" --include="*.yml" --include="*.yaml" \
+              -E "$pattern" . \
+              --exclude-dir=.git \
+              --exclude-dir=node_modules \
+              --exclude="*.example" \
+              --exclude="test_*" \
+              --exclude="*_test.py" || true)
+
+            # Filter out env var references and test data
+            filtered=$(echo "$matches" | grep -v 'os.getenv\|os.environ\|getenv\|change_me\|changeme\|test\|example\|placeholder\|mock\|KEYCLOAK_ADMIN' || true)
+
+            if [ -n "$filtered" ]; then
+              echo "WARNING: Potential secrets found:"
+              echo "$filtered"
+              FOUND=1
+            fi
+          done
+
+          if [ "$FOUND" -eq 1 ]; then
+            echo "::warning::Potential hardcoded secrets detected. Review the matches above."
+          else
+            echo "No hardcoded secrets detected."
+          fi
+
+  # ── Dependency Vulnerability Scan ────────────────────────────
+  deps:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pip-audit
+        run: pip install pip-audit
+      - name: Audit main dependencies
+        run: |
+          pip install -e ".[dev]" 2>/dev/null || true
+          pip-audit --ignore-vuln PYSEC-2024-0 || echo "::warning::Some vulnerabilities found"
+        continue-on-error: true
+
+  # ── Docker Image Scan ────────────────────────────────────────
+  docker-scan:
+    name: Docker Image Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build API image
+        run: docker build -t mda-api:scan api/
+      - name: Run Trivy scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: mda-api:scan
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: 0  # Don't fail, just report
