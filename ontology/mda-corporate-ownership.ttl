@@ -1,0 +1,51 @@
+@prefix rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:     <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+@prefix prov:    <http://www.w3.org/ns/prov#> .
+@prefix schema:  <https://schema.org/> .
+@prefix mda:     <https://mda-intelligence.local/ontology/corporate#> .
+
+<https://mda-intelligence.local/ontology/corporate>
+    a owl:Ontology ;
+    rdfs:label "MDA Corporate Ownership Ontology" ;
+    rdfs:comment "Corporate ownership graph ontology aligned to CCO, PROV-O, FollowTheMoney." ;
+    owl:versionInfo "4.0.0" .
+
+# ── Classes ──────────────────────────────────────────────
+
+mda:CorporateEntity a owl:Class ; rdfs:label "Corporate Entity" .
+mda:Company a owl:Class ; rdfs:subClassOf mda:CorporateEntity ; rdfs:label "Company" .
+mda:Person a owl:Class ; rdfs:label "Natural Person" .
+mda:OwnershipRelation a owl:Class ; rdfs:subClassOf prov:Entity ; rdfs:label "Ownership Relation" .
+mda:DirectorshipRelation a owl:Class ; rdfs:subClassOf prov:Entity ; rdfs:label "Directorship Relation" .
+mda:SanctionDesignation a owl:Class ; rdfs:label "Sanction Designation" .
+mda:Address a owl:Class ; rdfs:label "Address" .
+mda:Property a owl:Class ; rdfs:label "Property" .
+mda:Vessel a owl:Class ; rdfs:label "Vessel" .
+
+# ── Object Properties ────────────────────────────────────
+
+mda:ownerOf a owl:ObjectProperty ; rdfs:domain mda:OwnershipRelation ; rdfs:range mda:CorporateEntity .
+mda:assetOf a owl:ObjectProperty ; rdfs:domain mda:OwnershipRelation ; rdfs:range mda:CorporateEntity .
+mda:directParent a owl:ObjectProperty ; rdfs:domain mda:CorporateEntity ; rdfs:range mda:CorporateEntity .
+mda:ultimateParent a owl:ObjectProperty ; rdfs:domain mda:CorporateEntity ; rdfs:range mda:CorporateEntity .
+mda:directorOf a owl:ObjectProperty ; rdfs:domain mda:DirectorshipRelation ; rdfs:range mda:CorporateEntity .
+mda:sanctionedEntity a owl:ObjectProperty ; rdfs:domain mda:SanctionDesignation ; rdfs:range owl:Thing .
+mda:registeredAt a owl:ObjectProperty ; rdfs:domain mda:CorporateEntity ; rdfs:range mda:Address .
+mda:ownsProperty a owl:ObjectProperty ; rdfs:domain mda:CorporateEntity ; rdfs:range mda:Property .
+mda:ownsVessel a owl:ObjectProperty ; rdfs:domain mda:CorporateEntity ; rdfs:range mda:Vessel .
+
+# ── Data Properties ──────────────────────────────────────
+
+mda:leiCode a owl:DatatypeProperty ; rdfs:range xsd:string .
+mda:registrationNumber a owl:DatatypeProperty ; rdfs:range xsd:string .
+mda:jurisdictionCode a owl:DatatypeProperty ; rdfs:range xsd:string .
+mda:ownershipPercentage a owl:DatatypeProperty ; rdfs:range xsd:decimal .
+mda:opacityScore a owl:DatatypeProperty ; rdfs:range xsd:decimal .
+mda:isShell a owl:DatatypeProperty ; rdfs:range xsd:boolean .
+mda:riskScore a owl:DatatypeProperty ; rdfs:range xsd:decimal .
+mda:confidence a owl:DatatypeProperty ; rdfs:range xsd:decimal .
+mda:sourceDataset a owl:DatatypeProperty ; rdfs:range xsd:string .
+mda:sanctionProgram a owl:DatatypeProperty ; rdfs:range xsd:string .
+mda:designationDate a owl:DatatypeProperty ; rdfs:range xsd:date .

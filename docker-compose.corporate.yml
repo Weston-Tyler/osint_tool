@@ -1,0 +1,144 @@
+# Corporate Ownership Graph — Docker Compose Extension
+# Usage: docker compose -f docker-compose.yml -f docker-compose.corporate.yml up -d
+
+x-common-env: &common-env
+  MEMGRAPH_HOST: memgraph
+  MEMGRAPH_PORT: "7687"
+  KAFKA_BOOTSTRAP: redpanda:9092
+  ELASTICSEARCH_URL: http://elasticsearch:9200
+
+services:
+
+  gleif-ingestor:
+    build:
+      context: ./workers/corporate/gleif
+    container_name: mda-gleif
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+    depends_on: [memgraph, redpanda]
+    networks: [mda-net]
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "4"
+
+  ch-ingestor:
+    build:
+      context: ./workers/corporate/companies_house
+    container_name: mda-companies-house
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      CH_API_KEY: "${COMPANIES_HOUSE_API_KEY:-}"
+    depends_on: [memgraph, redpanda]
+    networks: [mda-net]
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: "4"
+
+  icij-importer:
+    build:
+      context: ./workers/corporate/icij
+    container_name: mda-icij
+    restart: "no"
+    environment:
+      <<: *common-env
+    depends_on: [memgraph]
+    networks: [mda-net]
+
+  opensanctions-sync:
+    build:
+      context: ./workers/corporate/opensanctions_ftm
+    container_name: mda-opensanctions-ftm
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+    depends_on: [memgraph, redpanda]
+    networks: [mda-net]
+
+  sec-edgar:
+    build:
+      context: ./workers/corporate/sec_edgar
+    container_name: mda-sec-edgar
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+    depends_on: [memgraph, redpanda]
+    networks: [mda-net]
+
+  shell-detector:
+    build:
+      context: ./services/corporate/shell_detector
+      dockerfile: ../../../workers/corporate/gleif/Dockerfile
+    container_name: mda-shell-detector
+    restart: unless-stopped
+    command: ["python", "-u", "shell_detector.py"]
+    volumes:
+      - ./services/corporate/shell_detector:/app:ro
+    environment:
+      <<: *common-env
+    depends_on: [memgraph]
+    networks: [mda-net]
+
+  tco-detector:
+    build:
+      context: ./services/corporate/tco_detector
+      dockerfile: ../../../workers/corporate/gleif/Dockerfile
+    container_name: mda-tco-detector
+    restart: unless-stopped
+    command: ["python", "-u", "tco_detector.py"]
+    volumes:
+      - ./services/corporate/tco_detector:/app:ro
+    environment:
+      <<: *common-env
+    depends_on: [memgraph, redpanda]
+    networks: [mda-net]
+
+  entity-resolver:
+    build:
+      context: ./services/corporate/entity_resolver
+      dockerfile: ../../../workers/corporate/gleif/Dockerfile
+    container_name: mda-entity-resolver-corp
+    restart: unless-stopped
+    command: ["python", "-u", "entity_resolver.py"]
+    volumes:
+      - ./services/corporate/entity_resolver:/app:ro
+    environment:
+      <<: *common-env
+    depends_on: [memgraph]
+    networks: [mda-net]
+    deploy:
+      resources:
+        limits:
+          memory: 16G
+          cpus: "8"
+
+  property-collector:
+    build:
+      context: ./workers/corporate/property
+      dockerfile: ../gleif/Dockerfile
+    container_name: mda-property-collector
+    restart: unless-stopped
+    command: ["python", "-u", "property_collector.py"]
+    volumes:
+      - ./workers/corporate/property:/app:ro
+    environment:
+      <<: *common-env
+    depends_on: [memgraph]
+    networks: [mda-net]
+
+  ownership-api:
+    build:
+      context: ./services/corporate/ownership_api
+    container_name: mda-ownership-api
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    environment:
+      <<: *common-env
+    depends_on: [memgraph]
+    networks: [mda-net]
