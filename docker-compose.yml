@@ -24,19 +24,20 @@ services:
   # Port 7687: Bolt (Cypher) | Port 7444: HTTPS | Port 3000: Memgraph Lab
   # ============================================================
   memgraph:
-    image: memgraph/memgraph-mage:latest
+    image: memgraph/memgraph-mage:1.22-memgraph-2.18
     container_name: mda-memgraph
     restart: unless-stopped
     ports:
       - "7687:7687"
       - "7444:7444"
-      - "3000:3000"
     volumes:
       - memgraph-data:/var/lib/memgraph
-      - ./schema/graph/memgraph-init.cypher:/docker-entrypoint-initdb.d/init.cypher:ro
-    environment:
-      MEMGRAPH_MEMORY_LIMIT: "${MEMGRAPH_MEMORY_LIMIT:-2048}"
-      MEMGRAPH_LOG_LEVEL: WARNING
+    command:
+      - "--log-level=WARNING"
+      - "--also-log-to-stderr"
+      - "--memory-limit=${MEMGRAPH_MEMORY_LIMIT:-2048}"
+      - "--storage-properties-on-edges=true"
+      - "--telemetry-enabled=false"
     ulimits:
       nofile:
         soft: 65536
