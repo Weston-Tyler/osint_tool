@@ -13,7 +13,7 @@ jobs:
     name: Verify all Docker images
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Pull + verify all compose images
         run: |
           set -e
@@ -59,7 +59,7 @@ jobs:
     name: External data source APIs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Check all free data source APIs
         run: |
           ENDPOINTS=(
