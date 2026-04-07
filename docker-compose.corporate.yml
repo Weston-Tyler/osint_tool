@@ -1,5 +1,14 @@
 # Corporate Ownership Graph — Docker Compose Extension
 # Usage: docker compose -f docker-compose.yml -f docker-compose.corporate.yml up -d
+#
+# Only `ownership-api` starts by default. All ingesters and detectors are
+# one-shot CLIs that require source data or arguments; they live in the
+# `batch` profile and are run on demand:
+#
+#   docker compose --profile batch run --rm gleif-ingestor
+#   docker compose --profile batch run --rm ch-ingestor <dump.zip>
+#   docker compose --profile batch run --rm shell-detector
+#   ...
 
 x-common-env: &common-env
   MEMGRAPH_HOST: memgraph
@@ -10,10 +19,11 @@ x-common-env: &common-env
 services:
 
   gleif-ingestor:
+    profiles: ["batch"]
     build:
       context: ./workers/corporate/gleif
     container_name: mda-gleif
-    restart: unless-stopped
+    restart: "no"
     environment:
       <<: *common-env
     depends_on: [memgraph, redpanda]
@@ -25,10 +35,11 @@ services:
           cpus: "4"
 
   ch-ingestor:
+    profiles: ["batch"]
     build:
       context: ./workers/corporate/companies_house
     container_name: mda-companies-house
-    restart: unless-stopped
+    restart: "no"
     environment:
       <<: *common-env
       CH_API_KEY: "${COMPANIES_HOUSE_API_KEY:-}"
@@ -41,6 +52,7 @@ services:
           cpus: "4"
 
   icij-importer:
+    profiles: ["batch"]
     build:
       context: ./workers/corporate/icij
     container_name: mda-icij
@@ -51,50 +63,55 @@ services:
     networks: [mda-net]
 
   opensanctions-sync:
+    profiles: ["batch"]
     build:
       context: ./workers/corporate/opensanctions_ftm
     container_name: mda-opensanctions-ftm
-    restart: unless-stopped
+    restart: "no"
     environment:
       <<: *common-env
     depends_on: [memgraph, redpanda]
     networks: [mda-net]
 
   sec-edgar:
+    profiles: ["batch"]
     build:
       context: ./workers/corporate/sec_edgar
     container_name: mda-sec-edgar
-    restart: unless-stopped
+    restart: "no"
     environment:
       <<: *common-env
     depends_on: [memgraph, redpanda]
     networks: [mda-net]
 
   shell-detector:
+    profiles: ["batch"]
     build:
       context: ./services/corporate/shell_detector
     container_name: mda-shell-detector
-    restart: unless-stopped
+    restart: "no"
     environment:
       <<: *common-env
     depends_on: [memgraph]
     networks: [mda-net]
 
   tco-detector:
+    profiles: ["batch"]
     build:
       context: ./services/corporate/tco_detector
     container_name: mda-tco-detector
-    restart: unless-stopped
+    restart: "no"
     environment:
       <<: *common-env
     depends_on: [memgraph, redpanda]
     networks: [mda-net]
 
   entity-resolver:
+    profiles: ["batch"]
     build:
       context: ./services/corporate/entity_resolver
     container_name: mda-entity-resolver-corp
-    restart: unless-stopped
+    restart: "no"
     environment:
       <<: *common-env
     depends_on: [memgraph]
@@ -106,10 +123,11 @@ services:
           cpus: "8"
 
   property-collector:
+    profiles: ["batch"]
     build:
       context: ./workers/corporate/property
     container_name: mda-property-collector
-    restart: unless-stopped
+    restart: "no"
     environment:
       <<: *common-env
     depends_on: [memgraph]

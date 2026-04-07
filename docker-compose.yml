@@ -168,11 +168,8 @@ services:
     networks:
       mda-net:
         ipv4_address: 172.28.1.14
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
+    # MinIO image ships neither curl nor wget; rely on container status
+    # (nothing depends_on minio via service_healthy)
 
   # ============================================================
   # SEARCH — Elasticsearch 8
@@ -283,11 +280,12 @@ services:
   # INGESTION WORKERS
   # ============================================================
   worker-ais:
+    profiles: ["batch"]
     build:
       context: ./workers/ais
       dockerfile: Dockerfile
     container_name: mda-worker-ais
-    restart: unless-stopped
+    restart: "no"
     environment:
       KAFKA_BOOTSTRAP: redpanda:9092
       AISHUB_USERNAME: "${AISHUB_USERNAME}"
@@ -326,11 +324,12 @@ services:
       - mda-net
 
   worker-uas:
+    profiles: ["batch"]
     build:
       context: ./workers/uas
       dockerfile: Dockerfile
     container_name: mda-worker-uas
-    restart: unless-stopped
+    restart: "no"
     environment:
       KAFKA_BOOTSTRAP: redpanda:9092
     depends_on:

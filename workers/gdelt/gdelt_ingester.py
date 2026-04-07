@@ -34,11 +34,11 @@ GDELT_EVENTS_HEADER = [
     "IsRootEvent", "EventCode", "EventBaseCode", "EventRootCode",
     "QuadClass", "GoldsteinScale", "NumMentions", "NumSources", "NumArticles",
     "AvgTone", "Actor1Geo_Type", "Actor1Geo_FullName", "Actor1Geo_CountryCode",
-    "Actor1Geo_ADM1Code", "Actor1Geo_Lat", "Actor1Geo_Long", "Actor1Geo_FeatureID",
+    "Actor1Geo_ADM1Code", "Actor1Geo_ADM2Code", "Actor1Geo_Lat", "Actor1Geo_Long", "Actor1Geo_FeatureID",
     "Actor2Geo_Type", "Actor2Geo_FullName", "Actor2Geo_CountryCode",
-    "Actor2Geo_ADM1Code", "Actor2Geo_Lat", "Actor2Geo_Long", "Actor2Geo_FeatureID",
+    "Actor2Geo_ADM1Code", "Actor2Geo_ADM2Code", "Actor2Geo_Lat", "Actor2Geo_Long", "Actor2Geo_FeatureID",
     "ActionGeo_Type", "ActionGeo_FullName", "ActionGeo_CountryCode",
-    "ActionGeo_ADM1Code", "ActionGeo_Lat", "ActionGeo_Long", "ActionGeo_FeatureID",
+    "ActionGeo_ADM1Code", "ActionGeo_ADM2Code", "ActionGeo_Lat", "ActionGeo_Long", "ActionGeo_FeatureID",
     "DATEADDED", "SOURCEURL",
 ]
 
@@ -73,6 +73,20 @@ def is_mda_relevant(row: dict) -> bool:
     return False
 
 
+def _safe_float(v) -> float:
+    try:
+        return float(v) if v not in (None, "") else 0.0
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _safe_int(v) -> int:
+    try:
+        return int(v) if v not in (None, "") else 0
+    except (ValueError, TypeError):
+        return 0
+
+
 def normalize_gdelt_event(row: dict) -> dict:
     """Normalize GDELT row to MDA event schema."""
     return {
@@ -81,17 +95,17 @@ def normalize_gdelt_event(row: dict) -> dict:
         "event_date": row.get("Day", ""),
         "event_code": row.get("EventCode", ""),
         "event_code_desc": MDA_RELEVANT_CAMEO_CODES.get(row.get("EventCode", ""), "OTHER"),
-        "goldstein_scale": float(row.get("GoldsteinScale") or 0),
-        "avg_tone": float(row.get("AvgTone") or 0),
+        "goldstein_scale": _safe_float(row.get("GoldsteinScale")),
+        "avg_tone": _safe_float(row.get("AvgTone")),
         "actor1_name": row.get("Actor1Name", ""),
         "actor1_country": row.get("Actor1CountryCode", ""),
         "actor2_name": row.get("Actor2Name", ""),
         "actor2_country": row.get("Actor2CountryCode", ""),
         "action_geo_country": row.get("ActionGeo_CountryCode", ""),
         "action_geo_fullname": row.get("ActionGeo_FullName", ""),
-        "action_lat": float(row.get("ActionGeo_Lat") or 0),
-        "action_lon": float(row.get("ActionGeo_Long") or 0),
-        "num_mentions": int(row.get("NumMentions") or 0),
+        "action_lat": _safe_float(row.get("ActionGeo_Lat")),
+        "action_lon": _safe_float(row.get("ActionGeo_Long")),
+        "num_mentions": _safe_int(row.get("NumMentions")),
         "source_url": row.get("SOURCEURL", ""),
     }
 
