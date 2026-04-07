@@ -171,6 +171,34 @@ def normalize_insight(insight: dict[str, Any], vessel_id: str) -> dict[str, Any]
     }
 
 
+# ── Rate limiting ───────────────────────────────────────────────────
+# GFW limit: 50,000 requests/day = ~35 requests/min steady state.
+# We pace at REQUEST_INTERVAL_SEC between requests to stay well under that
+# AND avoid the per-token concurrent request throttle.
+REQUEST_INTERVAL_SEC = float(os.getenv("GFW_REQUEST_INTERVAL_SEC", "1.5"))
+MAX_RETRIES = int(os.getenv("GFW_MAX_RETRIES", "5"))
+BACKOFF_BASE_SEC = float(os.getenv("GFW_BACKOFF_BASE_SEC", "5.0"))
+
+
+async def _paced_request(coro_factory, label: str):
+    """Run an async GFW client call with retry/backoff and rate-limit pacing."""
+    for attempt in range(MAX_RETRIES):
+        try:
+            result = await coro_factory()
+            await asyncio.sleep(REQUEST_INTERVAL_SEC)
+            return result
+        except Exception as e:
+            msg = str(e)
+            is_throttle = "429" in msg or "rate" in msg.lower() or "concurrent" in msg.lower()
+            if attempt == MAX_RETRIES - 1:
+                logger.error("%s: giving up after %d attempts: %s", label, MAX_RETRIES, e)
+                raise
+            wait = BACKOFF_BASE_SEC * (2 ** attempt) if is_throttle else BACKOFF_BASE_SEC
+            logger.warning("%s: attempt %d/%d failed (%s), backing off %.1fs",
+                           label, attempt + 1, MAX_RETRIES, type(e).__name__, wait)
+            await asyncio.sleep(wait)
+
+
 # ── Workers ─────────────────────────────────────────────────────────
 async def fetch_events(
     client: gfw.Client,
@@ -178,27 +206,36 @@ async def fetch_events(
     event_type: str,
     start_date: date,
     end_date: date,
+    max_pages: int | None = None,
 ) -> set[str]:
     """Fetch all events of a given type, publish to Kafka. Return vessel IDs seen."""
     dataset, topic = EVENT_DATASETS[event_type]
-    logger.info("Fetching %s from %s to %s", event_type, start_date, end_date)
+    logger.info("Fetching %s from %s to %s (interval=%.1fs)", event_type, start_date, end_date, REQUEST_INTERVAL_SEC)
 
     vessel_ids: set[str] = set()
     offset = 0
     page_size = 100
     total = 0
+    page_num = 0
 
     while True:
+        if max_pages is not None and page_num >= max_pages:
+            logger.info("%s: reached max_pages=%d, stopping early", event_type, max_pages)
+            break
+
         try:
-            result = await client.events.get_all_events(
-                datasets=[dataset],
-                start_date=start_date,
-                end_date=end_date,
-                limit=page_size,
-                offset=offset,
+            result = await _paced_request(
+                lambda: client.events.get_all_events(
+                    datasets=[dataset],
+                    start_date=start_date,
+                    end_date=end_date,
+                    limit=page_size,
+                    offset=offset,
+                ),
+                label=f"{event_type} offset={offset}",
             )
         except Exception as e:
-            logger.error("Failed page offset=%d for %s: %s", offset, event_type, e)
+            logger.error("Failed page offset=%d for %s after retries: %s", offset, event_type, e)
             break
 
         entries = result.data() or []
@@ -218,6 +255,7 @@ async def fetch_events(
             except Exception as ex:
                 producer.send("mda.dlq", {"source": "gfw", "event_type": event_type, "error": str(ex)})
 
+        page_num += 1
         if len(entries) < page_size:
             break
         offset += page_size
@@ -365,7 +403,7 @@ async def load_reference_layers(client: gfw.Client) -> None:
 
 
 # ── Main orchestration ──────────────────────────────────────────────
-async def run_full_ingest(days: int, do_sar: bool, do_insights: bool) -> None:
+async def run_full_ingest(days: int, do_sar: bool, do_insights: bool, max_pages: int | None) -> None:
     end = date.today()
     start = end - timedelta(days=days)
 
@@ -376,7 +414,7 @@ async def run_full_ingest(days: int, do_sar: bool, do_insights: bool) -> None:
     try:
         for event_type in ("ENCOUNTER", "LOITERING", "PORT_VISIT", "FISHING", "GAP"):
             try:
-                vids = await fetch_events(client, producer, event_type, start, end)
+                vids = await fetch_events(client, producer, event_type, start, end, max_pages=max_pages)
                 all_vessels.update(vids)
             except Exception as e:
                 logger.error("%s ingest failed: %s", event_type, e)
@@ -401,6 +439,8 @@ def main() -> int:
     parser.add_argument("--no-sar", action="store_true", help="Skip SAR detections (rate-limited)")
     parser.add_argument("--no-insights", action="store_true", help="Skip per-vessel insights")
     parser.add_argument("--references", action="store_true", help="One-shot reference layer load (EEZ/MPA/RFMO)")
+    parser.add_argument("--max-pages", type=int, default=None,
+                        help="Max pages per event type (each page = 100 events). Useful for testing or staying under rate limits.")
     args = parser.parse_args()
 
     if args.references:
@@ -412,6 +452,7 @@ def main() -> int:
         days=args.days,
         do_sar=not args.no_sar,
         do_insights=not args.no_insights,
+        max_pages=args.max_pages,
     ))
     return 0
 
