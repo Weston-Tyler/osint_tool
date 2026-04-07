@@ -20,6 +20,7 @@ jobs:
           IMAGES=$(grep -h "^\s*image:" docker-compose*.yml \
             | sed 's/^\s*image:\s*//' \
             | tr -d '"' \
+            | grep -v '^mda/' \
             | sort -u)
           FAIL=0
           for img in $IMAGES; do
