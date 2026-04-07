@@ -33,10 +33,9 @@ services:
       - "3000:3000"
     volumes:
       - memgraph-data:/var/lib/memgraph
-      - ./configs/memgraph.conf:/etc/memgraph/memgraph.conf:ro
       - ./schema/graph/memgraph-init.cypher:/docker-entrypoint-initdb.d/init.cypher:ro
     environment:
-      MEMGRAPH_MEMORY_LIMIT: 40960
+      MEMGRAPH_MEMORY_LIMIT: "${MEMGRAPH_MEMORY_LIMIT:-2048}"
       MEMGRAPH_LOG_LEVEL: WARNING
     ulimits:
       nofile:
@@ -72,13 +71,13 @@ services:
     command: >
       postgres
         -c shared_preload_libraries='age'
-        -c max_connections=200
-        -c shared_buffers=8GB
-        -c effective_cache_size=24GB
-        -c maintenance_work_mem=2GB
-        -c work_mem=256MB
+        -c max_connections=${POSTGRES_MAX_CONNECTIONS:-100}
+        -c shared_buffers=${POSTGRES_SHARED_BUFFERS:-512MB}
+        -c effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-1GB}
+        -c maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-128MB}
+        -c work_mem=${POSTGRES_WORK_MEM:-16MB}
         -c wal_level=replica
-        -c max_wal_size=4GB
+        -c max_wal_size=${POSTGRES_MAX_WAL_SIZE:-1GB}
         -c checkpoint_completion_target=0.9
     networks:
       mda-net:
@@ -189,7 +188,7 @@ services:
       discovery.type: single-node
       xpack.security.enabled: "false"
       xpack.security.http.ssl.enabled: "false"
-      ES_JAVA_OPTS: "-Xms8g -Xmx8g"
+      ES_JAVA_OPTS: "${ES_JAVA_OPTS:--Xms1g -Xmx1g}"
       ELASTIC_PASSWORD: "${ELASTIC_PASSWORD}"
     ulimits:
       memlock:
@@ -223,9 +222,7 @@ services:
       GEOSERVER_DATA_DIR: /opt/geoserver_data
       GEOSERVER_ADMIN_USER: "${GEOSERVER_ADMIN_USER:-admin}"
       GEOSERVER_ADMIN_PASSWORD: "${GEOSERVER_ADMIN_PASSWORD}"
-      JAVA_OPTS: >-
-        -Xms2g -Xmx4g
-        -Dorg.geotools.referencing.forceXY=true
+      JAVA_OPTS: "${GEOSERVER_JAVA_OPTS:--Xms512m -Xmx1g -Dorg.geotools.referencing.forceXY=true}"
     depends_on:
       postgres:
         condition: service_healthy
