@@ -222,7 +222,7 @@ import requests
 r = requests.get('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd', timeout=10)
 d = r.json()
 assert 'bitcoin' in d and d['bitcoin']['usd'] > 0
-print(f'OK: BTC = \${d[\"bitcoin\"][\"usd\"]:,.0f}')
+print('OK: BTC =', int(d['bitcoin']['usd']))
 \"" "true"
 
 run_test "World Bank: fetch Mexico GDP" \
