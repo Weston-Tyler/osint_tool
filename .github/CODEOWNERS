@@ -1,0 +1,37 @@
+# CODEOWNERS — defines who must review changes to specific paths
+# Format: pattern @user-or-team
+
+# Default owner for everything
+*                                   @Weston-Tyler
+
+# Core infrastructure
+docker-compose*.yml                 @Weston-Tyler
+.github/workflows/                  @Weston-Tyler
+.devcontainer/                      @Weston-Tyler
+k8s/                                @Weston-Tyler
+
+# Schemas — changes here affect the whole system
+schema/                             @Weston-Tyler
+ontology/                           @Weston-Tyler
+
+# Security-sensitive areas
+SECURITY.md                         @Weston-Tyler
+.env.example                        @Weston-Tyler
+configs/keycloak/                   @Weston-Tyler
+configs/traefik/                    @Weston-Tyler
+api/services/auth.py                @Weston-Tyler
+
+# Data source workers — any code touching external APIs
+workers/                            @Weston-Tyler
+
+# Causal engine + WorldFish
+services/causal_extractor/          @Weston-Tyler
+services/causal_graph_learner/      @Weston-Tyler
+worldfish/                          @Weston-Tyler
+
+# Corporate ownership graph
+workers/corporate/                  @Weston-Tyler
+services/corporate/                 @Weston-Tyler
+
+# Tests
+tests/                              @Weston-Tyler

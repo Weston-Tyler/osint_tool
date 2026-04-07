@@ -1,0 +1,101 @@
+version: 2
+updates:
+  # ── Python dependencies ──────────────────────────────────
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "python"]
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      python-minor:
+        update-types: ["minor", "patch"]
+
+  # API service
+  - package-ecosystem: "pip"
+    directory: "/api"
+    schedule:
+      interval: "weekly"
+    labels: ["dependencies", "python", "api"]
+
+  # ── Worker services (one entry per worker dir with requirements.txt) ──
+  - package-ecosystem: "pip"
+    directory: "/workers/ais"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "python", "workers"]
+  - package-ecosystem: "pip"
+    directory: "/workers/sanctions"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "python", "workers"]
+  - package-ecosystem: "pip"
+    directory: "/workers/gdelt"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "python", "workers"]
+  - package-ecosystem: "pip"
+    directory: "/workers/uas"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "python", "workers"]
+  - package-ecosystem: "pip"
+    directory: "/workers/acled"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "python", "workers"]
+  - package-ecosystem: "pip"
+    directory: "/workers/economic"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "python", "workers"]
+  - package-ecosystem: "pip"
+    directory: "/workers/financial"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "python", "workers"]
+  - package-ecosystem: "pip"
+    directory: "/workers/humanitarian"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "python", "workers"]
+  - package-ecosystem: "pip"
+    directory: "/workers/geospatial"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "python", "workers"]
+  - package-ecosystem: "pip"
+    directory: "/workers/corporate/gleif"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "python", "corporate"]
+  - package-ecosystem: "pip"
+    directory: "/workers/corporate/companies_house"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "python", "corporate"]
+
+  # ── Docker base images ──────────────────────────────────
+  - package-ecosystem: "docker"
+    directory: "/api"
+    schedule:
+      interval: "weekly"
+    labels: ["dependencies", "docker"]
+  - package-ecosystem: "docker"
+    directory: "/workers/ais"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "docker"]
+  - package-ecosystem: "docker"
+    directory: "/workers/corporate/gleif"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "docker"]
+
+  # ── GitHub Actions ──────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels: ["dependencies", "ci"]
+    commit-message:
+      prefix: "chore(ci)"
+
+  # ── npm for frontend ────────────────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/frontend/kepler-gl"
+    schedule:
+      interval: "weekly"
+    labels: ["dependencies", "frontend"]
+    open-pull-requests-limit: 3

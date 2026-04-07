@@ -1,0 +1,68 @@
+# Auto-label PRs based on which files they touch
+
+api:
+  - changed-files:
+      - any-glob-to-any-file: ['api/**/*']
+
+docker:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'docker-compose*.yml'
+          - '**/Dockerfile'
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file: ['**/*.md', 'docs/**/*']
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: ['.github/**/*']
+
+schema:
+  - changed-files:
+      - any-glob-to-any-file: ['schema/**/*', 'ontology/**/*']
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file: ['tests/**/*']
+
+workers:
+  - changed-files:
+      - any-glob-to-any-file: ['workers/**/*']
+
+causal-engine:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'services/causal_extractor/**/*'
+          - 'services/causal_graph_learner/**/*'
+          - 'worldfish/**/*'
+
+corporate-ownership:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'workers/corporate/**/*'
+          - 'services/corporate/**/*'
+
+gdelt:
+  - changed-files:
+      - any-glob-to-any-file: ['workers/gdelt/**/*']
+
+maritime:
+  - changed-files:
+      - any-glob-to-any-file: ['workers/ais/**/*']
+
+sanctions:
+  - changed-files:
+      - any-glob-to-any-file: ['workers/sanctions/**/*']
+
+humanitarian:
+  - changed-files:
+      - any-glob-to-any-file: ['workers/humanitarian/**/*']
+
+frontend:
+  - changed-files:
+      - any-glob-to-any-file: ['frontend/**/*']
+
+kubernetes:
+  - changed-files:
+      - any-glob-to-any-file: ['k8s/**/*']
