@@ -1,0 +1,73 @@
+name: New Data Source Request
+description: Propose a new open data source for ingestion
+title: "[data-source]: "
+labels: ["data-source", "enhancement"]
+body:
+  - type: input
+    id: name
+    attributes:
+      label: Data source name
+      placeholder: e.g. "Norwegian Brønnøysund Register"
+    validations:
+      required: true
+
+  - type: input
+    id: url
+    attributes:
+      label: Data source URL
+      placeholder: https://data.brreg.no
+    validations:
+      required: true
+
+  - type: dropdown
+    id: domain
+    attributes:
+      label: Which MDA domain does this fit?
+      options:
+        - Maritime
+        - Cartel / TCO
+        - Counter-narcotics
+        - Counter-UAS
+        - Corporate ownership
+        - Humanitarian
+        - Economic / financial
+        - Geospatial
+        - Sanctions / PEPs
+        - Events / news
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: access
+    attributes:
+      label: Access type
+      options:
+        - Free bulk download (CSV/JSON/XML)
+        - Free REST API (no key)
+        - Free REST API (key required)
+        - Free with registration
+        - Paid
+        - Web scraping only
+    validations:
+      required: true
+
+  - type: textarea
+    id: intelligence-value
+    attributes:
+      label: Intelligence value
+      description: Why is this source valuable for MDA?
+    validations:
+      required: true
+
+  - type: textarea
+    id: coverage
+    attributes:
+      label: Coverage estimate
+      description: How many entities/events? Geographic coverage? Update frequency?
+
+  - type: textarea
+    id: existing-examples
+    attributes:
+      label: Existing collectors
+      description: Are there existing Python libraries or OSINT projects already pulling this data?

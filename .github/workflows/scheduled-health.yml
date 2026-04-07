@@ -1,0 +1,96 @@
+name: Scheduled Health Check
+
+on:
+  schedule:
+    # Daily at 06:00 UTC — catches upstream image/API rot
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+
+  # ── Image manifests (catches upstream tag removals) ─────────
+  image-manifests:
+    name: Verify all Docker images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pull + verify all compose images
+        run: |
+          set -e
+          IMAGES=$(grep -h "^\s*image:" docker-compose*.yml \
+            | sed 's/^\s*image:\s*//' \
+            | tr -d '"' \
+            | sort -u)
+          FAIL=0
+          for img in $IMAGES; do
+            [ -z "$img" ] && continue
+            printf "  %-65s " "$img"
+            if docker manifest inspect "$img" > /dev/null 2>&1; then
+              echo "OK"
+            else
+              echo "FAIL"
+              FAIL=1
+            fi
+          done
+          exit $FAIL
+
+      - name: Create issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = `Scheduled: Docker image manifest check failed on ${new Date().toISOString().split('T')[0]}`;
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              labels: 'ci-failure,scheduled', state: 'open'
+            });
+            if (existing.data.length === 0) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body: 'The scheduled image manifest check failed. See [workflow run](' + context.serverUrl + '/' + context.repo.owner + '/' + context.repo.repo + '/actions/runs/' + context.runId + ').',
+                labels: ['ci-failure', 'scheduled', 'needs-triage']
+              });
+            }
+
+  # ── External API reachability ───────────────────────────────
+  external-apis:
+    name: External data source APIs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check all free data source APIs
+        run: |
+          ENDPOINTS=(
+            "GDELT|http://data.gdeltproject.org/gdeltv2/masterfilelist.txt"
+            "OFAC SDN|https://www.treasury.gov/ofac/downloads/sanctions/1.0/sdn_advanced.json"
+            "OpenSanctions|https://data.opensanctions.org/datasets/latest/default/index.json"
+            "ReliefWeb|https://api.reliefweb.int/v1/reports?limit=1"
+            "CoinGecko|https://api.coingecko.com/api/v3/ping"
+            "World Bank|https://api.worldbank.org/v2/country/MX/indicator/NY.GDP.MKTP.CD?format=json&per_page=1"
+            "UNHCR|https://api.unhcr.org/population/v1/population/?limit=1"
+            "UN Comtrade|https://comtradeapi.un.org/public/v1/preview/C/A/HS"
+            "GDELT DOC API|https://api.gdeltproject.org/api/v2/doc/doc?query=test&mode=artlist&format=json&maxrecords=1"
+            "NASA FIRMS|https://firms.modaps.eosdis.nasa.gov/api/"
+            "ICIJ Offshore Leaks|https://offshoreleaks-data.icij.org/offshoreleaks/csv/latest.zip"
+            "GLEIF API|https://api.gleif.org/api/v1/lei-records?page%5Bsize%5D=1"
+            "UK Companies House|https://api.company-information.service.gov.uk/"
+          )
+          FAIL=0
+          for entry in "${ENDPOINTS[@]}"; do
+            name="${entry%%|*}"
+            url="${entry##*|}"
+            printf "  %-30s " "$name"
+            if curl -sfI --max-time 15 "$url" > /dev/null 2>&1 \
+               || curl -sf --max-time 15 -o /dev/null "$url" 2>&1; then
+              echo "OK"
+            else
+              echo "FAIL"
+              FAIL=1
+            fi
+          done
+          # Non-fatal: just report
+          if [ "$FAIL" -eq 1 ]; then
+            echo "::warning::One or more external data sources are unreachable"
+          fi

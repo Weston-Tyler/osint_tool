@@ -1,0 +1,55 @@
+name: Codespaces Prebuild
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.devcontainer/**'
+      - 'docker-compose.yml'
+      - 'pyproject.toml'
+      - 'api/requirements.txt'
+  workflow_dispatch:
+
+jobs:
+  prebuild-validation:
+    name: Validate Codespaces setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate devcontainer.json
+        run: |
+          python3 -c "
+          import json
+          with open('.devcontainer/devcontainer.json') as f:
+              # Strip // comments (JSON5 devcontainer format)
+              raw = f.read()
+              import re
+              stripped = re.sub(r'//.*', '', raw)
+              data = json.loads(stripped)
+              assert 'image' in data or 'dockerFile' in data or 'build' in data
+              print('devcontainer.json valid')
+          "
+
+      - name: Validate setup.sh is executable
+        run: |
+          if [ ! -x .devcontainer/setup.sh ]; then
+              echo "ERROR: .devcontainer/setup.sh is not executable"
+              exit 1
+          fi
+          bash -n .devcontainer/setup.sh
+          echo "setup.sh syntax OK"
+
+      - name: Check forwarded ports don't conflict
+        run: |
+          python3 -c "
+          import json, re
+          with open('.devcontainer/devcontainer.json') as f:
+              raw = re.sub(r'//.*', '', f.read())
+              data = json.loads(raw)
+          ports = data.get('forwardPorts', [])
+          if len(ports) != len(set(ports)):
+              print('ERROR: duplicate ports in forwardPorts')
+              exit(1)
+          print(f'{len(ports)} forwarded ports, no duplicates')
+          "
