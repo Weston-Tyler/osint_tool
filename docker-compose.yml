@@ -353,6 +353,8 @@ services:
     restart: unless-stopped
     environment:
       KAFKA_BOOTSTRAP: redpanda:9092
+      MEMGRAPH_HOST: memgraph
+      MEMGRAPH_PORT: "7687"
       MEMGRAPH_BOLT_URL: bolt://memgraph:7687
       POSTGRES_DSN: "postgresql://mda:${POSTGRES_PASSWORD}@postgres:5432/mda"
       ELASTICSEARCH_URL: http://elasticsearch:9200
