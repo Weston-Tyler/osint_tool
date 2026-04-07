@@ -73,12 +73,8 @@ services:
   shell-detector:
     build:
       context: ./services/corporate/shell_detector
-      dockerfile: ../../../workers/corporate/gleif/Dockerfile
     container_name: mda-shell-detector
     restart: unless-stopped
-    command: ["python", "-u", "shell_detector.py"]
-    volumes:
-      - ./services/corporate/shell_detector:/app:ro
     environment:
       <<: *common-env
     depends_on: [memgraph]
@@ -87,12 +83,8 @@ services:
   tco-detector:
     build:
       context: ./services/corporate/tco_detector
-      dockerfile: ../../../workers/corporate/gleif/Dockerfile
     container_name: mda-tco-detector
     restart: unless-stopped
-    command: ["python", "-u", "tco_detector.py"]
-    volumes:
-      - ./services/corporate/tco_detector:/app:ro
     environment:
       <<: *common-env
     depends_on: [memgraph, redpanda]
@@ -101,12 +93,8 @@ services:
   entity-resolver:
     build:
       context: ./services/corporate/entity_resolver
-      dockerfile: ../../../workers/corporate/gleif/Dockerfile
     container_name: mda-entity-resolver-corp
     restart: unless-stopped
-    command: ["python", "-u", "entity_resolver.py"]
-    volumes:
-      - ./services/corporate/entity_resolver:/app:ro
     environment:
       <<: *common-env
     depends_on: [memgraph]
@@ -120,12 +108,8 @@ services:
   property-collector:
     build:
       context: ./workers/corporate/property
-      dockerfile: ../gleif/Dockerfile
     container_name: mda-property-collector
     restart: unless-stopped
-    command: ["python", "-u", "property_collector.py"]
-    volumes:
-      - ./workers/corporate/property:/app:ro
     environment:
       <<: *common-env
     depends_on: [memgraph]
