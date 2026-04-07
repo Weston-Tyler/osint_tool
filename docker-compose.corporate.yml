@@ -140,7 +140,7 @@ services:
     container_name: mda-ownership-api
     restart: unless-stopped
     ports:
-      - "8090:8090"
+      - "8090:8000"
     environment:
       <<: *common-env
     depends_on: [memgraph]

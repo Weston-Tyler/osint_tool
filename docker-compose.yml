@@ -244,7 +244,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./api:/app
+      - ./api:/app/api
     environment:
       MEMGRAPH_HOST: memgraph
       MEMGRAPH_PORT: "7687"
