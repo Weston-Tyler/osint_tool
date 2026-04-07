@@ -8,15 +8,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install dependencies
-COPY requirements.txt .
+# Build context is ./services/corporate (see docker-compose.corporate.yml)
+# so we can COPY sibling directories like shell_detector
+COPY ownership_api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY ownership_api.py .
-
+# Copy the ownership_api module
+COPY ownership_api/ /app/
 # Copy the shell_detector module (imported at runtime by /shell-check)
-COPY ../shell_detector /app/services/corporate/shell_detector
+COPY shell_detector/ /app/services/corporate/shell_detector/
+RUN mkdir -p /app/services/corporate && \
+    touch /app/services/corporate/__init__.py
 
 EXPOSE 8000
 

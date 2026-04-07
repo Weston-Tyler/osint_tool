@@ -117,7 +117,8 @@ services:
 
   ownership-api:
     build:
-      context: ./services/corporate/ownership_api
+      context: ./services/corporate
+      dockerfile: ownership_api/Dockerfile
     container_name: mda-ownership-api
     restart: unless-stopped
     ports:
