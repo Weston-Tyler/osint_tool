@@ -114,9 +114,11 @@ services:
       - --rpc-addr redpanda:33145
       - --advertise-rpc-addr redpanda:33145
       - --mode dev-container
-      - --smp 4
-      - --memory 8G
+      - --smp ${REDPANDA_SMP:-2}
+      - --memory ${REDPANDA_MEMORY:-2G}
       - --default-log-level=warn
+      - --set redpanda.topic_partitions_per_shard=4096
+      - --set redpanda.auto_create_topics_enabled=true
     ports:
       - "9092:9092"
       - "19092:19092"

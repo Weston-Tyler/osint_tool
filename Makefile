@@ -31,6 +31,11 @@ init-db: ## Initialize Memgraph schema (base + expansions)
 	docker exec -i mda-memgraph mgconsole --host=localhost < schema/graph/causal-schema.cypher
 	docker exec -i mda-memgraph mgconsole --host=localhost < schema/graph/corporate-ownership-schema.cypher
 
+gfw-topics: ## Create the per-event-type GFW topics used by gfw_full_ingester
+	@for t in mda.gfw.encounters mda.gfw.loitering mda.gfw.port_visits mda.gfw.fishing mda.gfw.gaps mda.gfw.vessels mda.gfw.insights mda.gfw.sar_detections; do \
+		docker exec mda-redpanda rpk topic create $$t -p 1 -r 1 2>&1 | tail -1; \
+	done
+
 topics-all: ## Create all Kafka topics (base + expansions)
 	./scripts/create-kafka-topics.sh
 	./scripts/create-causal-kafka-topics.sh
