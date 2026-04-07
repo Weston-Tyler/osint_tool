@@ -13,6 +13,7 @@
 x-common-env: &common-env
   MEMGRAPH_HOST: memgraph
   MEMGRAPH_PORT: "7687"
+  MEMGRAPH_URI: bolt://memgraph:7687
   KAFKA_BOOTSTRAP: redpanda:9092
   ELASTICSEARCH_URL: http://elasticsearch:9200
 
