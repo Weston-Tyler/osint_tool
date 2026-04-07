@@ -188,13 +188,13 @@ echo ""
 echo -e "${CYAN}5. Live Data Source Fetches${NC}"
 echo "   -------------------------"
 
-run_test "OFAC SDN: fetch first 10 entries" \
+run_test "OFAC SDN: fetch SDN list" \
     "python3 -c \"
 import requests
-r = requests.get('https://www.treasury.gov/ofac/downloads/sanctions/1.0/sdn_advanced.json', timeout=30)
-d = r.json()
-assert len(d.get('sdnEntries', [])) > 100
-print(f'OK: {len(d[\"sdnEntries\"])} SDN entries')
+r = requests.get('https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN.XML', timeout=60, allow_redirects=True)
+assert r.status_code == 200, f'status={r.status_code}'
+assert len(r.content) > 100000, f'too small: {len(r.content)}'
+print('OK: SDN.XML', len(r.content), 'bytes')
 \"" "true"
 
 run_test "GDELT: fetch latest master file" \
@@ -209,7 +209,7 @@ print(f'OK: {len(lines)} entries in master file')
 run_test "ReliefWeb: fetch 1 report" \
     "python3 -c \"
 import requests
-r = requests.post('https://api.reliefweb.int/v2/reports', json={'limit':1}, timeout=15)
+r = requests.post('https://api.reliefweb.int/v2/reports?appname=mda-osint-verify', json={'limit':1}, timeout=15)
 assert r.status_code == 200
 d = r.json()
 assert len(d.get('data', [])) >= 1
