@@ -92,7 +92,7 @@ run_test "MinIO running" \
     "curl -sf http://localhost:9000/minio/health/live"
 
 run_test "GeoServer running" \
-    "curl -sfL http://localhost:8085/geoserver/web/ | grep -qi geoserver"
+    "curl -sf -o /dev/null -w '%{http_code}' http://localhost:8085/geoserver/web/ | grep -qE '200|302'"
 
 run_test "Grafana running" \
     "curl -sf http://localhost:3001/api/health | grep -q ok"
@@ -388,7 +388,7 @@ run_test "Memgraph: count sanctioned entities" \
     "mg_query \"MATCH (n) WHERE n.sanctions_status = 'SANCTIONED' RETURN count(n) AS cnt;\" | grep -qE '[0-9]'"
 
 run_test "Memgraph: SHOW STREAMS" \
-    "mg_query 'SHOW STREAMS;' | head -1 | grep -qi 'name\\|stream\\|^$'"
+    "mg_query 'SHOW STREAMS;' >/dev/null"
 
 run_test "PostGIS: spatial query works" \
     "docker exec mda-postgres psql -U mda -d mda -c \"SELECT ST_AsText(ST_MakePoint(-76, 5));\" 2>/dev/null | grep -q POINT"

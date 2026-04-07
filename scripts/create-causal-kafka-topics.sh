@@ -4,7 +4,7 @@ set -euo pipefail
 
 RPK="docker exec mda-redpanda rpk"
 
-echo "Creating causal analysis Kafka topics on ${BOOTSTRAP}..."
+echo "Creating causal analysis Kafka topics via mda-redpanda container..."
 
 # Articles for causal extraction
 $RPK topic create mda.articles.raw \
