@@ -3,6 +3,9 @@
 -- Geospatial tables and AIS time-series
 -- ============================================================
 
+CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS vector;
+
 -- ============================================================
 -- AIS POSITION HISTORY (high-volume time-series)
 -- ============================================================
