@@ -56,7 +56,7 @@ services:
   # Port 5432: PostgreSQL
   # ============================================================
   postgres:
-    image: apache/age:PG16
+    image: apache/age:release_PG16_1.5.0
     container_name: mda-postgres
     restart: unless-stopped
     ports:

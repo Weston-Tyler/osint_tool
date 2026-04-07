@@ -148,3 +148,43 @@ jobs:
       - run: docker compose -f docker-compose.yml -f docker-compose.causal.yml config > /dev/null
       - run: docker compose -f docker-compose.yml -f docker-compose.datasets.yml config > /dev/null
       - run: docker compose -f docker-compose.yml -f docker-compose.gdelt.yml config > /dev/null
+      - run: docker compose -f docker-compose.yml -f docker-compose.corporate.yml config > /dev/null
+
+  # ── 6. Image Manifest Validation ─────────────────────────────
+  # Pulls every base image referenced in compose files to verify
+  # they still exist on the registry. Catches issues like
+  # `memgraph-platform:2.14.0` being removed upstream.
+  image-manifests:
+    name: Image Manifest Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract and verify all images
+        run: |
+          set -e
+          # Extract unique image references from all compose files
+          IMAGES=$(grep -h "^\s*image:" docker-compose*.yml \
+            | sed 's/^\s*image:\s*//' \
+            | sort -u)
+
+          FAIL=0
+          for img in $IMAGES; do
+            # Skip build contexts (no image: defined but build: is)
+            [ -z "$img" ] && continue
+            printf "  Checking %-60s " "$img"
+            if docker manifest inspect "$img" > /dev/null 2>&1; then
+              echo "OK"
+            else
+              echo "FAIL - manifest not found"
+              FAIL=1
+            fi
+          done
+
+          if [ "$FAIL" -eq 1 ]; then
+            echo ""
+            echo "ERROR: One or more Docker images cannot be pulled."
+            echo "Check that image tags haven't been removed upstream."
+            exit 1
+          fi
+          echo ""
+          echo "All image manifests verified."
