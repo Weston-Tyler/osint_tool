@@ -71,30 +71,48 @@ def _pick(record: dict, *keys) -> Any:
 
 
 def normalize(raw: dict) -> dict | None:
-    """Flatten a GFW vessel search result into the fields we store."""
+    """Flatten a GFW vessel search result into the fields we store.
+
+    The pydantic model_dump output uses snake_case keys (self_reported_info,
+    registry_info, registry_owners, combined_sources_info, etc.) — NOT the
+    camelCase shown in the REST docs. The ship_types and gear_types come
+    from combined_sources_info, not from self_reported_info.
+    """
     if not raw:
         return None
-    # The GFW v3 vessels API returns a nested dict with selfReportedInfo /
-    # registryInfo / registryOwners lists. Collapse to scalar best-effort.
-    si_list = raw.get("selfReportedInfo") or []
-    reg_list = raw.get("registryInfo") or []
-    own_list = raw.get("registryOwners") or []
+    si_list = raw.get("self_reported_info") or []
+    reg_list = raw.get("registry_info") or []
+    own_list = raw.get("registry_owners") or []
+    csi_list = raw.get("combined_sources_info") or []
     si = si_list[0] if si_list else {}
     reg = reg_list[0] if reg_list else {}
     own = own_list[0] if own_list else {}
+    csi = csi_list[0] if csi_list else {}
+
+    # ship_types / gear_types are nested lists of {name, source, year_from, year_to}
+    ship_type = None
+    if csi.get("ship_types"):
+        ship_type = csi["ship_types"][0].get("name")
+    elif reg.get("ship_type"):
+        ship_type = reg.get("ship_type")
+
+    gear_type = None
+    if csi.get("gear_types"):
+        gear_type = csi["gear_types"][0].get("name")
 
     return {
-        "gfw_vessel_id": _pick(raw, "id") or _pick(si, "id"),
+        "gfw_vessel_id": _pick(si, "id") or _pick(csi, "vessel_id") or _pick(reg, "id"),
         "mmsi": _pick(si, "ssvid") or _pick(reg, "ssvid"),
         "imo": _pick(si, "imo") or _pick(reg, "imo"),
-        "callsign": _pick(si, "callsign") or _pick(reg, "callsign"),
-        "name": _pick(si, "shipname") or _pick(reg, "shipname"),
+        "callsign": _pick(si, "call_sign") or _pick(reg, "call_sign"),
+        "name": _pick(si, "ship_name") or _pick(reg, "ship_name") or _pick(si, "n_ship_name"),
         "flag": _pick(si, "flag") or _pick(reg, "flag"),
-        "vessel_type": _pick(si, "shiptype") or _pick(reg, "shiptype"),
+        "vessel_type": ship_type,
+        "gear_type": gear_type,
         "owner_name": _pick(own, "name"),
         "owner_flag": _pick(own, "flag"),
-        "first_seen": _pick(si, "transmissionDateFrom"),
-        "last_seen": _pick(si, "transmissionDateTo"),
+        "first_seen": _pick(si, "transmission_date_from"),
+        "last_seen": _pick(si, "transmission_date_to"),
     }
 
 
@@ -122,15 +140,30 @@ async def enrich_one(client: gfw.Client, mmsi: str) -> dict | None:
 
 
 def fetch_pending_mmsis(mg: Memgraph, limit: int | None = None) -> list[str]:
-    """Return MMSIs of vessels with no name yet."""
-    q = "MATCH (v:Vessel) WHERE v.name IS NULL AND v.mmsi IS NOT NULL RETURN v.mmsi AS mmsi"
+    """Return MMSIs of vessels that have not yet had a GFW identity lookup.
+
+    Uses v.identity_lookup_complete IS NULL so we don't re-query vessels
+    whose GFW record legitimately has no ship_name (many small fishing
+    vessels are nameless in the registry but still have flag + callsign).
+    """
+    q = (
+        "MATCH (v:Vessel) "
+        "WHERE v.identity_lookup_complete IS NULL AND v.mmsi IS NOT NULL "
+        "RETURN v.mmsi AS mmsi"
+    )
     if limit:
         q += f" LIMIT {int(limit)}"
     return [row["mmsi"] for row in mg.execute_and_fetch(q)]
 
 
 def update_vessel(mg: Memgraph, mmsi: str, ident: dict):
-    """Merge the enriched identity fields onto the existing Vessel node."""
+    """Merge the enriched identity fields onto the existing Vessel node.
+
+    Uses coalesce($val, property) to only write non-null fields so a
+    vessel with null ship_name but real flag/callsign still gets those
+    recorded. Also writes identity_lookup_complete so we can distinguish
+    'never enriched' from 'enriched but GFW has no name'.
+    """
     mg.execute(
         """
         MATCH (v:Vessel {mmsi: $mmsi})
@@ -140,10 +173,12 @@ def update_vessel(mg: Memgraph, mmsi: str, ident: dict):
             v.name = coalesce($name, v.name),
             v.flag = coalesce($flag, v.flag),
             v.vessel_type = coalesce($vessel_type, v.vessel_type),
+            v.gear_type = coalesce($gear_type, v.gear_type),
             v.owner_name = coalesce($owner_name, v.owner_name),
             v.owner_flag = coalesce($owner_flag, v.owner_flag),
             v.first_seen = coalesce($first_seen, v.first_seen),
             v.last_seen = coalesce($last_seen, v.last_seen),
+            v.identity_lookup_complete = true,
             v.identity_enriched_at = localDateTime()
         """,
         {
@@ -154,6 +189,7 @@ def update_vessel(mg: Memgraph, mmsi: str, ident: dict):
             "name": ident.get("name"),
             "flag": ident.get("flag"),
             "vessel_type": ident.get("vessel_type"),
+            "gear_type": ident.get("gear_type"),
             "owner_name": ident.get("owner_name"),
             "owner_flag": ident.get("owner_flag"),
             "first_seen": ident.get("first_seen"),
@@ -178,18 +214,27 @@ async def run(limit: int | None, only_mmsi_prefix: str | None):
                 len(mmsis) * (REQUEST_INTERVAL_SEC + 0.3) / 60.0)
 
     ok = 0
+    nameless = 0
     miss = 0
     for i, mmsi in enumerate(mmsis, 1):
         ident = await enrich_one(client, mmsi)
-        if ident and ident.get("name"):
-            update_vessel(mg, mmsi, ident)
-            ok += 1
-        else:
+        if ident is None:
+            # No GFW match at all — don't mark complete, let next run retry
             miss += 1
+        else:
+            # Got a record; write whatever fields are present (flag/callsign
+            # are usually set even when ship_name is null). Mark complete.
+            update_vessel(mg, mmsi, ident)
+            if ident.get("name"):
+                ok += 1
+            else:
+                nameless += 1
         if i % 25 == 0:
-            logger.info("Progress: %d/%d (ok=%d, miss=%d)", i, len(mmsis), ok, miss)
+            logger.info("Progress: %d/%d (named=%d, nameless=%d, no_match=%d)",
+                        i, len(mmsis), ok, nameless, miss)
 
-    logger.info("✓ Done. Enriched %d, unmatched %d, total %d", ok, miss, len(mmsis))
+    logger.info("✓ Done. Named %d, nameless %d, no_match %d, total %d",
+                ok, nameless, miss, len(mmsis))
 
 
 def main() -> int:
