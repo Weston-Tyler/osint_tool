@@ -58,7 +58,7 @@ jobs:
           SERVICE_NAME=$(echo "${{ matrix.service }}" | tr '/' '-')
           echo "name=$SERVICE_NAME" >> $GITHUB_OUTPUT
       - name: Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.service }}
           push: true
