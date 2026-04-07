@@ -26,13 +26,23 @@ topics: ## Create Kafka topics
 es-indices: ## Create Elasticsearch index mappings
 	./scripts/setup-elasticsearch-indices.sh
 
-init-db: ## Initialize Memgraph schema
-	docker exec mda-memgraph mgconsole < schema/graph/memgraph-init.cypher
+init-db: ## Initialize Memgraph schema (base + expansions)
+	docker exec -i mda-memgraph mgconsole --host=localhost < schema/graph/memgraph-init.cypher
+	docker exec -i mda-memgraph mgconsole --host=localhost < schema/graph/causal-schema.cypher
+	docker exec -i mda-memgraph mgconsole --host=localhost < schema/graph/corporate-ownership-schema.cypher
 
-setup: up ## Full setup: start services, create topics, ES indices, init DB
+topics-all: ## Create all Kafka topics (base + expansions)
+	./scripts/create-kafka-topics.sh
+	./scripts/create-causal-kafka-topics.sh
+	./scripts/create-corporate-topics.sh
+	./scripts/create-dataset-topics.sh
+	./scripts/create-gdelt-topics.sh
+
+setup: ## Full setup: start services, create topics, ES indices, init DB
+	docker compose -f docker-compose.yml -f docker-compose.corporate.yml up -d
 	@echo "Waiting for services to be healthy..."
-	sleep 30
-	$(MAKE) topics
+	sleep 45
+	$(MAKE) topics-all
 	$(MAKE) es-indices
 	$(MAKE) init-db
 	@echo "MDA system ready!"

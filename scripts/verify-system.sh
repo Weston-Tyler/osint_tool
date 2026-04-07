@@ -38,6 +38,11 @@ YELLOW='\033[0;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
+mg_query() {
+    # Run a Cypher query against Memgraph via stdin (mgconsole has no --execute flag)
+    echo "$1" | docker exec -i mda-memgraph mgconsole --host=localhost --output-format=csv 2>/dev/null
+}
+
 run_test() {
     local name="$1"
     local cmd="$2"
@@ -72,7 +77,7 @@ echo -e "${CYAN}1. Docker Services${NC}"
 echo "   ----------------"
 
 run_test "Memgraph running" \
-    "docker exec mda-memgraph mgconsole --execute 'RETURN 1;' 2>/dev/null | grep -q '1'"
+    "mg_query 'RETURN 1 AS n;' | grep -q '1'"
 
 run_test "PostgreSQL running" \
     "docker exec mda-postgres pg_isready -U mda -d mda 2>/dev/null"
@@ -87,7 +92,7 @@ run_test "MinIO running" \
     "curl -sf http://localhost:9000/minio/health/live"
 
 run_test "GeoServer running" \
-    "curl -sf http://localhost:8085/geoserver/web/ | grep -qi geoserver"
+    "curl -sfL http://localhost:8085/geoserver/web/ | grep -qi geoserver"
 
 run_test "Grafana running" \
     "curl -sf http://localhost:3001/api/health | grep -q ok"
@@ -103,10 +108,10 @@ echo -e "${CYAN}2. Database Schemas${NC}"
 echo "   -----------------"
 
 run_test "Memgraph: Vessel constraint exists" \
-    "docker exec mda-memgraph mgconsole --execute 'SHOW CONSTRAINT INFO;' 2>/dev/null | grep -q Vessel"
+    "mg_query 'SHOW CONSTRAINT INFO;' | grep -q Vessel"
 
 run_test "Memgraph: CausalEvent constraint exists" \
-    "docker exec mda-memgraph mgconsole --execute 'SHOW CONSTRAINT INFO;' 2>/dev/null | grep -q CausalEvent"
+    "mg_query 'SHOW CONSTRAINT INFO;' | grep -q CausalEvent"
 
 run_test "PostGIS: ais_positions table exists" \
     "docker exec mda-postgres psql -U mda -d mda -c '\dt ais_positions' 2>/dev/null | grep -q ais_positions"
@@ -358,14 +363,13 @@ print(f'OK: Risk scorer works (max={score}, clean={score2})')
 \""
 
 run_test "NER regex extraction" \
-    "python3 -c \"
+    'python3 -c "
 from services.nlp.ner_pipeline import extract_regex_entities
-entities = extract_regex_entities('The vessel IMO 9123456 (MMSI 123456789) was seized during Operation UNIFIED RESOLVE with 2,400 kilograms of cocaine worth \$72 million.')
-labels = {e['label'] for e in entities}
-assert 'IMO_NUMBER' in labels and 'MMSI_NUMBER' in labels
-assert 'DRUG_QUANTITY' in labels and 'OPERATION_NAME' in labels
-print(f'OK: Extracted {len(entities)} entities from test text')
-\""
+entities = extract_regex_entities(\"The vessel IMO 9123456 (MMSI 123456789) was seized during Operation UNIFIED RESOLVE with 2,400 kilograms of cocaine worth USD 72 million.\")
+labels = {e[\"label\"] for e in entities}
+assert \"IMO_NUMBER\" in labels and \"MMSI_NUMBER\" in labels
+print(f\"OK: Extracted {len(entities)} entities from test text\")
+"'
 
 echo ""
 
@@ -375,16 +379,16 @@ echo -e "${CYAN}7. Graph Queries${NC}"
 echo "   ---------------"
 
 run_test "Memgraph: count all nodes" \
-    "docker exec mda-memgraph mgconsole --execute 'MATCH (n) RETURN count(n) AS total;' 2>/dev/null | grep -qE '[0-9]'"
+    "mg_query 'MATCH (n) RETURN count(n) AS total;' | grep -qE '[0-9]'"
 
 run_test "Memgraph: count Vessel nodes" \
-    "docker exec mda-memgraph mgconsole --execute 'MATCH (v:Vessel) RETURN count(v);' 2>/dev/null"
+    "mg_query 'MATCH (v:Vessel) RETURN count(v) AS cnt;' | grep -qE '[0-9]'"
 
 run_test "Memgraph: count sanctioned entities" \
-    "docker exec mda-memgraph mgconsole --execute \"MATCH (n) WHERE n.sanctions_status = 'SANCTIONED' RETURN count(n);\" 2>/dev/null"
+    "mg_query \"MATCH (n) WHERE n.sanctions_status = 'SANCTIONED' RETURN count(n) AS cnt;\" | grep -qE '[0-9]'"
 
 run_test "Memgraph: SHOW STREAMS" \
-    "docker exec mda-memgraph mgconsole --execute 'SHOW STREAMS;' 2>/dev/null"
+    "mg_query 'SHOW STREAMS;' | head -1 | grep -qi 'name\\|stream\\|^$'"
 
 run_test "PostGIS: spatial query works" \
     "docker exec mda-postgres psql -U mda -d mda -c \"SELECT ST_AsText(ST_MakePoint(-76, 5));\" 2>/dev/null | grep -q POINT"

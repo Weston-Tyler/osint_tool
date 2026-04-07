@@ -68,6 +68,8 @@ services:
       - postgres-data:/var/lib/postgresql/data
       - ./schema/relational/postgres-init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
       - ./schema/relational/postgis-init.sql:/docker-entrypoint-initdb.d/02_postgis.sql:ro
+      - ./schema/relational/causal-schema.sql:/docker-entrypoint-initdb.d/03_causal.sql:ro
+      - ./schema/relational/corporate-schema.sql:/docker-entrypoint-initdb.d/04_corporate.sql:ro
     environment:
       POSTGRES_DB: mda
       POSTGRES_USER: mda
