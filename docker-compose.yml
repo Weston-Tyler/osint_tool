@@ -24,7 +24,7 @@ services:
   # Port 7687: Bolt (Cypher) | Port 7444: HTTPS | Port 3000: Memgraph Lab
   # ============================================================
   memgraph:
-    image: memgraph/memgraph-platform:2.14.0
+    image: memgraph/memgraph-mage:latest
     container_name: mda-memgraph
     restart: unless-stopped
     ports:
