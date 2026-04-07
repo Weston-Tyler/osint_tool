@@ -29,6 +29,15 @@ TOPICS = [
     "mda.uas.detections.raw",
     "mda.events.gdelt.raw",
     "mda.interdictions.new",
+    # GFW v3 — full-coverage ingester topics (see workers/ais/gfw_full_ingester.py)
+    "mda.gfw.encounters",
+    "mda.gfw.loitering",
+    "mda.gfw.port_visits",
+    "mda.gfw.fishing",
+    "mda.gfw.gaps",
+    "mda.gfw.vessels",
+    "mda.gfw.insights",
+    "mda.gfw.sar_detections",
 ]
 
 
@@ -293,6 +302,141 @@ class GraphProcessor:
             },
         )
 
+    # ── GFW v3 handlers ─────────────────────────────────────────────
+    def upsert_gfw_vessel(self, msg: dict):
+        """Upsert a Vessel node from a GFW vessel-identity record."""
+        vid = msg.get("vessel_id")
+        mmsi = msg.get("mmsi")
+        imo = msg.get("imo")
+        if not vid and not mmsi and not imo:
+            return
+        # Prefer MMSI as the merge key when available, fall back to vessel_id
+        merge_key, merge_val = ("mmsi", mmsi) if mmsi else ("gfw_vessel_id", vid)
+        self.memgraph.execute(
+            f"""
+            MERGE (v:Vessel {{{merge_key}: $val}})
+            ON CREATE SET
+                v.system_created_at = localDateTime(),
+                v.source_ids = ['global_fishing_watch'],
+                v.confidence = 0.9
+            SET v.gfw_vessel_id = $vid,
+                v.imo = coalesce($imo, v.imo),
+                v.callsign = coalesce($callsign, v.callsign),
+                v.name = coalesce($name, v.name),
+                v.flag = coalesce($flag, v.flag),
+                v.vessel_type = coalesce($vtype, v.vessel_type),
+                v.owner_name = coalesce($owner_name, v.owner_name),
+                v.owner_flag = coalesce($owner_flag, v.owner_flag),
+                v.first_seen = coalesce($first_seen, v.first_seen),
+                v.last_seen = coalesce($last_seen, v.last_seen),
+                v.system_updated_at = localDateTime()
+            """,
+            {
+                "val": merge_val,
+                "vid": vid,
+                "imo": imo,
+                "callsign": msg.get("callsign"),
+                "name": msg.get("name"),
+                "flag": msg.get("flag"),
+                "vtype": msg.get("vessel_type"),
+                "owner_name": msg.get("owner_name"),
+                "owner_flag": msg.get("owner_flag"),
+                "first_seen": msg.get("first_seen"),
+                "last_seen": msg.get("last_seen"),
+            },
+        )
+
+    def upsert_gfw_event(self, msg: dict, label: str, rel_type: str):
+        """Generic GFW event upsert: creates an event node linked to its vessel."""
+        eid = msg.get("event_id")
+        if not eid:
+            return
+        vid = msg.get("vessel_id")
+        mmsi = msg.get("vessel_mmsi")
+        # Build the event node + relationship to the vessel
+        merge_key, merge_val = ("mmsi", mmsi) if mmsi else ("gfw_vessel_id", vid)
+        if not merge_val:
+            return
+        self.memgraph.execute(
+            f"""
+            MERGE (e:{label} {{event_id: $eid}})
+            ON CREATE SET
+                e.source = 'global_fishing_watch',
+                e.start_time = $start_time,
+                e.end_time = $end_time,
+                e.lat = $lat,
+                e.lon = $lon,
+                e.encounter_type = $enc_type,
+                e.median_distance_km = $dist_km,
+                e.median_speed_knots = $speed,
+                e.port_id = $port_id,
+                e.port_name = $port_name,
+                e.port_country = $port_country,
+                e.gap_hours = $gap_hours,
+                e.system_created_at = localDateTime()
+            WITH e
+            MERGE (v:Vessel {{{merge_key}: $merge_val}})
+            ON CREATE SET v.system_created_at = localDateTime(),
+                          v.source_ids = ['global_fishing_watch']
+            MERGE (v)-[:{rel_type}]->(e)
+            """,
+            {
+                "eid": eid,
+                "start_time": msg.get("start_time"),
+                "end_time": msg.get("end_time"),
+                "lat": msg.get("lat"),
+                "lon": msg.get("lon"),
+                "enc_type": msg.get("encounter_type"),
+                "dist_km": msg.get("median_distance_km"),
+                "speed": msg.get("median_speed_knots"),
+                "port_id": msg.get("port_id"),
+                "port_name": msg.get("port_name"),
+                "port_country": msg.get("port_country"),
+                "gap_hours": msg.get("gap_hours"),
+                "merge_val": merge_val,
+            },
+        )
+        # If it's an encounter, also link the encountered vessel
+        ev_id = msg.get("encountered_vessel_id")
+        ev_mmsi = msg.get("encountered_vessel_mmsi")
+        if label == "Encounter" and (ev_id or ev_mmsi):
+            ev_key, ev_val = ("mmsi", ev_mmsi) if ev_mmsi else ("gfw_vessel_id", ev_id)
+            self.memgraph.execute(
+                f"""
+                MATCH (e:Encounter {{event_id: $eid}})
+                MERGE (v2:Vessel {{{ev_key}: $val}})
+                ON CREATE SET v2.system_created_at = localDateTime(),
+                              v2.source_ids = ['global_fishing_watch']
+                MERGE (v2)-[:ENCOUNTERED]->(e)
+                """,
+                {"eid": eid, "val": ev_val},
+            )
+
+    def upsert_gfw_insight(self, msg: dict):
+        """Attach IUU/risk insight properties to a vessel."""
+        vid = msg.get("vessel_id")
+        if not vid:
+            return
+        self.memgraph.execute(
+            """
+            MERGE (v:Vessel {gfw_vessel_id: $vid})
+            ON CREATE SET v.system_created_at = localDateTime(),
+                          v.source_ids = ['global_fishing_watch']
+            SET v.iuu_listed = $iuu,
+                v.gfw_fishing_hours = $fhrs,
+                v.gfw_gap_hours = $ghrs,
+                v.gfw_coverage_pct = $cov,
+                v.system_updated_at = localDateTime()
+            """,
+            {
+                "vid": vid,
+                "iuu": bool(msg.get("iuu_listed")),
+                "fhrs": msg.get("fishing_hours"),
+                "ghrs": msg.get("gap_hours"),
+                "cov": msg.get("coverage_pct"),
+            },
+        )
+
     def process_message(self, topic: str, msg: dict):
         """Route a Kafka message to the appropriate handler."""
         try:
@@ -305,11 +449,28 @@ class GraphProcessor:
             elif topic == "mda.uas.detections.raw":
                 self.upsert_uas_detection(msg)
             elif topic == "mda.ais.encounters.detected":
-                pass  # TODO: implement encounter upsert
+                pass  # legacy raw HTTP ingester — superseded by GFW topics below
             elif topic == "mda.events.gdelt.raw":
                 pass  # TODO: implement GDELT event processing
             elif topic == "mda.interdictions.new":
                 pass  # TODO: implement interdiction upsert
+            # ── GFW v3 ──────────────────────────────────────────────
+            elif topic == "mda.gfw.encounters":
+                self.upsert_gfw_event(msg, "Encounter", "INVOLVED_IN")
+            elif topic == "mda.gfw.loitering":
+                self.upsert_gfw_event(msg, "LoiteringEvent", "LOITERED_AT")
+            elif topic == "mda.gfw.port_visits":
+                self.upsert_gfw_event(msg, "PortVisit", "VISITED")
+            elif topic == "mda.gfw.fishing":
+                self.upsert_gfw_event(msg, "FishingEvent", "FISHED_AT")
+            elif topic == "mda.gfw.gaps":
+                self.upsert_gfw_event(msg, "AISGap", "WENT_DARK_AT")
+            elif topic == "mda.gfw.vessels":
+                self.upsert_gfw_vessel(msg)
+            elif topic == "mda.gfw.insights":
+                self.upsert_gfw_insight(msg)
+            elif topic == "mda.gfw.sar_detections":
+                pass  # SAR detections come without vessel IDs; geographic only
         except Exception as e:
             logger.error("Error processing message from %s: %s", topic, e, exc_info=True)
 
