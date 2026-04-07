@@ -2,8 +2,7 @@
 # Create Kafka topics for the Causal Chain Analysis Engine
 set -euo pipefail
 
-BOOTSTRAP="${KAFKA_BOOTSTRAP:-localhost:19092}"
-RPK="rpk -X brokers=${BOOTSTRAP}"
+RPK="docker exec mda-redpanda rpk"
 
 echo "Creating causal analysis Kafka topics on ${BOOTSTRAP}..."
 

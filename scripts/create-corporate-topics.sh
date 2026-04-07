@@ -2,8 +2,7 @@
 # Create Kafka topics for Corporate Ownership Graph
 set -euo pipefail
 
-BOOTSTRAP="${KAFKA_BOOTSTRAP:-localhost:19092}"
-RPK="rpk -X brokers=${BOOTSTRAP}"
+RPK="docker exec mda-redpanda rpk"
 
 echo "Creating corporate ownership Kafka topics..."
 

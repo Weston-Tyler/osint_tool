@@ -2,8 +2,7 @@
 # Create Kafka topics for expanded GDELT integration
 set -euo pipefail
 
-BOOTSTRAP="${KAFKA_BOOTSTRAP:-localhost:19092}"
-RPK="rpk -X brokers=${BOOTSTRAP}"
+RPK="docker exec mda-redpanda rpk"
 
 echo "Creating GDELT expansion Kafka topics..."
 

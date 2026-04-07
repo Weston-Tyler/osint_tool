@@ -4,10 +4,10 @@
 
 set -euo pipefail
 
-BOOTSTRAP="${KAFKA_BOOTSTRAP:-localhost:19092}"
-RPK="rpk -X brokers=${BOOTSTRAP}"
+# Run rpk inside the redpanda container so we don't need it installed on the host
+RPK="docker exec mda-redpanda rpk"
 
-echo "Creating MDA Kafka topics on ${BOOTSTRAP}..."
+echo "Creating MDA Kafka topics via mda-redpanda container..."
 
 # AIS positions: high-volume, 30-day retention, 12 partitions
 $RPK topic create mda.ais.positions.raw \
