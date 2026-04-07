@@ -1,0 +1,5 @@
+aiohttp>=3.9.0
+kafka-python>=2.0.2
+requests>=2.31.0
+gqlalchemy>=1.6.0
+pandas>=2.2.0
