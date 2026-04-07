@@ -46,10 +46,11 @@ services:
       mda-net:
         ipv4_address: 172.28.1.10
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "7687"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
+      test: ["CMD", "bash", "-c", "echo '' > /dev/tcp/localhost/7687"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   # ============================================================
   # RELATIONAL + GEOSPATIAL + GRAPH EXTENSION — PostgreSQL + PostGIS + AGE
