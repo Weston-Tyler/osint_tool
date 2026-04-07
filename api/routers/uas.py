@@ -19,10 +19,10 @@ async def get_uas_detections(
     mg = request.app.state.memgraph
 
     conditions = [
-        "e.detection_timestamp >= localDateTime() - duration({hours: $hours})",
+        f"e.detection_timestamp >= localDateTime() - duration({{hours: {int(since_hours)}}})",
         "e.detection_confidence >= $min_conf",
     ]
-    params: dict = {"hours": since_hours, "min_conf": min_confidence, "limit": limit}
+    params: dict = {"min_conf": min_confidence, "limit": limit}
 
     if location_context:
         conditions.append("e.location_context = $ctx")
