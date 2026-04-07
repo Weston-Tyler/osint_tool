@@ -209,7 +209,7 @@ print(f'OK: {len(lines)} entries in master file')
 run_test "ReliefWeb: fetch 1 report" \
     "python3 -c \"
 import requests
-r = requests.post('https://api.reliefweb.int/v2/reports?appname=mda-osint-verify', json={'limit':1}, timeout=15)
+r = requests.post('https://api.reliefweb.int/v2/reports?appname=mda-osint-verify-7k3p', json={'limit':1}, timeout=15)
 assert r.status_code == 200
 d = r.json()
 assert len(d.get('data', [])) >= 1
