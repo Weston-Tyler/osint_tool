@@ -173,9 +173,10 @@ CREATE TABLE IF NOT EXISTS humanitarian_crisis_scores (
     inform_score        DECIMAL(4,2),
     acled_30d_events    INTEGER,
     wfp_ipc_phase       SMALLINT,
-    computed_at         TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT uq_crisis_score UNIQUE (country, crisis_type, computed_at::date)
+    computed_at         TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_crisis_score
+    ON humanitarian_crisis_scores (country, crisis_type, (computed_at::date));
 CREATE INDEX IF NOT EXISTS idx_hcs_country ON humanitarian_crisis_scores (country, computed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_hcs_alert ON humanitarian_crisis_scores (alert_level, computed_at DESC);
