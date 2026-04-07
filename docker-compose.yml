@@ -311,11 +311,12 @@ services:
       - mda-net
 
   worker-gdelt:
+    profiles: ["batch"]
     build:
       context: ./workers/gdelt
       dockerfile: Dockerfile
     container_name: mda-worker-gdelt
-    restart: unless-stopped
+    restart: "no"
     environment:
       KAFKA_BOOTSTRAP: redpanda:9092
     depends_on:
