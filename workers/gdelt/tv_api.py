@@ -24,8 +24,11 @@ KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
 TOPIC_TV_CLIPS = "mda.gdelt.tv.clips"
 TOPIC_TV_NARRATIVE_SHIFTS = "mda.gdelt.tv.narrative_shifts"
 
-# Minimum interval between API requests (seconds)
-_RATE_LIMIT_INTERVAL = 1.0
+# Minimum interval between API requests (seconds). GDELT free tier
+# recommends >= 2s; we use 3s with backoff for safety.
+_RATE_LIMIT_INTERVAL = 3.0
+_MAX_RETRIES = 4
+_BACKOFF_BASE = 5.0
 
 # Pre-defined MDA monitoring keywords
 MDA_MONITOR_KEYWORDS: list[str] = [
@@ -74,16 +77,30 @@ class GDELTTvAPI:
     # ------------------------------------------------------------------
 
     def _rate_limited_get(self, params: dict[str, Any]) -> requests.Response:
-        """Execute a GET request with rate limiting (max 1 req/sec)."""
-        elapsed = time.monotonic() - self._last_request_time
-        if elapsed < _RATE_LIMIT_INTERVAL:
-            time.sleep(_RATE_LIMIT_INTERVAL - elapsed)
+        """Execute a GET request with rate limiting and 429/5xx backoff."""
+        for attempt in range(_MAX_RETRIES + 1):
+            elapsed = time.monotonic() - self._last_request_time
+            if elapsed < _RATE_LIMIT_INTERVAL:
+                time.sleep(_RATE_LIMIT_INTERVAL - elapsed)
 
-        logger.debug("TV API request params: %s", params)
-        resp = self._session.get(TV_API_BASE_URL, params=params, timeout=60)
-        self._last_request_time = time.monotonic()
-        resp.raise_for_status()
-        return resp
+            logger.debug("TV API request params: %s", params)
+            resp = self._session.get(TV_API_BASE_URL, params=params, timeout=60)
+            self._last_request_time = time.monotonic()
+
+            if resp.status_code in (429, 502, 503, 504):
+                if attempt >= _MAX_RETRIES:
+                    resp.raise_for_status()
+                delay = _BACKOFF_BASE * (2 ** attempt)
+                logger.warning(
+                    "TV API %d on attempt %d/%d, sleeping %ds before retry",
+                    resp.status_code, attempt + 1, _MAX_RETRIES + 1, int(delay),
+                )
+                time.sleep(delay)
+                continue
+
+            resp.raise_for_status()
+            return resp
+        raise RuntimeError("retry loop exited without returning")
 
     # ------------------------------------------------------------------
     # Core search methods
@@ -207,28 +224,56 @@ class GDELTTvAPI:
 
     def monitor_mda_keywords(
         self, timespan: str = "7d"
-    ) -> dict[str, list[dict[str, Any]]]:
-        """Run clip searches for all pre-defined MDA monitoring keywords.
+    ) -> dict[str, dict[str, Any]]:
+        """Track keyword mention volume across MDA monitoring terms.
+
+        GDELT TV 2.0's clip-listing modes (clipgallery, clipresults) return
+        HTML, not JSON. To stay JSON-only we use timelinevol, which gives
+        per-day mention counts. Each result is published to Kafka with the
+        timeline data plus a top-line total.
 
         Args:
             timespan: Lookback window for all keyword searches.
 
         Returns:
-            Dict mapping keyword to list of clip dicts.
+            Dict mapping keyword to per-keyword timeline summary.
         """
-        results: dict[str, list[dict[str, Any]]] = {}
+        results: dict[str, dict[str, Any]] = {}
         for keyword in MDA_MONITOR_KEYWORDS:
             try:
-                clips = self.search_clips(query=keyword, timespan=timespan)
-                results[keyword] = clips
+                timeline = self.search_volume_timeline(
+                    query=keyword, timespan=timespan
+                )
+                series = timeline.get("timeline", [])
+                points = series[0].get("data", []) if series else []
+                total_mentions = 0.0
+                for p in points:
+                    val = p.get("value", p.get("y", 0))
+                    try:
+                        total_mentions += float(val)
+                    except (TypeError, ValueError):
+                        pass
+                summary = {
+                    "keyword": keyword,
+                    "timespan": timespan,
+                    "total_mentions": round(total_mentions, 4),
+                    "data_points": len(points),
+                    "_mda_source": "gdelt_tv_api",
+                    "_mda_ingested_at": datetime.now(timezone.utc).isoformat(),
+                }
+                self._publish(TOPIC_TV_CLIPS, [summary])
+                results[keyword] = summary
                 logger.info(
-                    "MDA keyword monitor [%s]: %d clips", keyword, len(clips)
+                    "MDA keyword monitor [%s]: %.1f mentions across %d points",
+                    keyword, total_mentions, len(points),
                 )
             except Exception:
                 logger.exception(
                     "Error monitoring MDA keyword: %s", keyword
                 )
-                results[keyword] = []
+                results[keyword] = {
+                    "keyword": keyword, "total_mentions": 0, "error": True
+                }
         return results
 
     def detect_narrative_shift(
@@ -392,32 +437,60 @@ class GDELTTvAPI:
             self._producer = None
 
 
+def _sweep_once(client: "GDELTTvAPI") -> None:
+    """Run one sweep of keyword monitoring + narrative shift detection."""
+    keyword_results = client.monitor_mda_keywords(timespan="7d")
+    total_mentions = sum(
+        r.get("total_mentions", 0) or 0 for r in keyword_results.values()
+    )
+    logger.info(
+        "MDA keyword monitor complete: %.1f total mentions across %d keywords",
+        total_mentions, len(keyword_results),
+    )
+
+    shifts = client.detect_all_mda_narrative_shifts(lookback_days=30)
+    if shifts:
+        logger.warning("Narrative shifts detected in %d keywords", len(shifts))
+        for shift in shifts:
+            logger.warning(
+                "  - %s: z_score=%.2f (%s)",
+                shift["keyword"], shift["z_score"], shift["shift_direction"],
+            )
+
+
 def main() -> None:
-    """CLI convenience -- monitor MDA keywords and run narrative shift scan."""
+    """CLI: monitor keywords + narrative shifts, optionally on a loop."""
+    import argparse
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
-    client = GDELTTvAPI(publish_to_kafka=True)
-    try:
-        # Run keyword monitoring
-        keyword_results = client.monitor_mda_keywords(timespan="7d")
-        total_clips = sum(len(clips) for clips in keyword_results.values())
-        logger.info("MDA keyword monitor complete: %d total clips", total_clips)
 
-        # Run narrative shift detection
-        shifts = client.detect_all_mda_narrative_shifts(lookback_days=30)
-        if shifts:
-            logger.warning(
-                "Narrative shifts detected in %d keywords", len(shifts)
-            )
-            for shift in shifts:
-                logger.warning(
-                    "  - %s: z_score=%.2f (%s)",
-                    shift["keyword"],
-                    shift["z_score"],
-                    shift["shift_direction"],
-                )
+    ap = argparse.ArgumentParser(description="GDELT TV API MDA keyword monitor")
+    ap.add_argument(
+        "--loop",
+        type=int,
+        default=0,
+        metavar="SECONDS",
+        help="Re-run the sweep every N seconds (default: one-shot)",
+    )
+    args = ap.parse_args()
+
+    client = GDELTTvAPI(publish_to_kafka=True)
+    iteration = 0
+    try:
+        while True:
+            iteration += 1
+            logger.info("TV API sweep iteration %d starting", iteration)
+            try:
+                _sweep_once(client)
+            except Exception:
+                logger.exception("TV sweep iteration %d failed", iteration)
+            if args.loop <= 0:
+                break
+            logger.info("Sleeping %ds before next sweep", args.loop)
+            time.sleep(args.loop)
     finally:
         client.close()
 

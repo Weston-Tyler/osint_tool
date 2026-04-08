@@ -22,8 +22,16 @@ GEO_API_BASE_URL = "https://api.gdeltproject.org/api/v2/geo/geo"
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
 TOPIC_GEO_EVENTS = "mda.gdelt.geo.events"
 
-# Minimum interval between API requests (seconds)
-_RATE_LIMIT_INTERVAL = 1.0
+# Minimum interval between API requests (seconds). GDELT free tier
+# recommends >= 2s; we use 3s with backoff for safety.
+_RATE_LIMIT_INTERVAL = 3.0
+_MAX_RETRIES = 4
+_BACKOFF_BASE = 5.0
+
+# GDELT GEO API "near:" syntax has practical radius limits — large radii
+# return 404. Cap it at 500 km; for larger zones, fall back to a plain
+# country/keyword query without the near operator.
+_MAX_NEAR_RADIUS_KM = 500.0
 
 # Pre-defined MDA maritime zones of interest
 # Each zone is defined by a bounding box: (min_lat, max_lat, min_lon, max_lon)
@@ -113,16 +121,30 @@ class GDELTGeoAPI:
     # ------------------------------------------------------------------
 
     def _rate_limited_get(self, params: dict[str, Any]) -> requests.Response:
-        """Execute a GET request with rate limiting (max 1 req/sec)."""
-        elapsed = time.monotonic() - self._last_request_time
-        if elapsed < _RATE_LIMIT_INTERVAL:
-            time.sleep(_RATE_LIMIT_INTERVAL - elapsed)
+        """Execute a GET request with rate limiting and 429/5xx backoff."""
+        for attempt in range(_MAX_RETRIES + 1):
+            elapsed = time.monotonic() - self._last_request_time
+            if elapsed < _RATE_LIMIT_INTERVAL:
+                time.sleep(_RATE_LIMIT_INTERVAL - elapsed)
 
-        logger.debug("GEO API request params: %s", params)
-        resp = self._session.get(GEO_API_BASE_URL, params=params, timeout=60)
-        self._last_request_time = time.monotonic()
-        resp.raise_for_status()
-        return resp
+            logger.debug("GEO API request params: %s", params)
+            resp = self._session.get(GEO_API_BASE_URL, params=params, timeout=60)
+            self._last_request_time = time.monotonic()
+
+            if resp.status_code in (429, 502, 503, 504):
+                if attempt >= _MAX_RETRIES:
+                    resp.raise_for_status()
+                delay = _BACKOFF_BASE * (2 ** attempt)
+                logger.warning(
+                    "GEO API %d on attempt %d/%d, sleeping %ds before retry",
+                    resp.status_code, attempt + 1, _MAX_RETRIES + 1, int(delay),
+                )
+                time.sleep(delay)
+                continue
+
+            resp.raise_for_status()
+            return resp
+        raise RuntimeError("retry loop exited without returning")
 
     # ------------------------------------------------------------------
     # Core search methods
@@ -273,8 +295,6 @@ class GDELTGeoAPI:
         results: dict[str, dict[str, Any]] = {}
         for zone_name, zone_def in MDA_ZONES.items():
             try:
-                # Build a bounding-box query using the zone center point and
-                # the zone's thematic query suffix
                 center_lat = (zone_def["min_lat"] + zone_def["max_lat"]) / 2
                 center_lon = (zone_def["min_lon"] + zone_def["max_lon"]) / 2
 
@@ -285,13 +305,27 @@ class GDELTGeoAPI:
                 radius_km = max(lat_span, lon_span) * 111 / 2
 
                 query = zone_def["query_suffix"]
-                geojson = self.search_near_location(
-                    lat=center_lat,
-                    lon=center_lon,
-                    radius_km=radius_km,
-                    timespan=timespan,
-                    query=query,
-                )
+
+                if radius_km > _MAX_NEAR_RADIUS_KM:
+                    # Zone is too large for near: syntax (would 404).
+                    # Fall back to a plain text query without geo filter.
+                    logger.info(
+                        "MDA zone [%s]: radius %dkm > %dkm cap, "
+                        "using plain query (no near: filter)",
+                        zone_name, int(radius_km), int(_MAX_NEAR_RADIUS_KM),
+                    )
+                    geojson = self.search_point_data(
+                        query=query, timespan=timespan
+                    )
+                else:
+                    geojson = self.search_near_location(
+                        lat=center_lat,
+                        lon=center_lon,
+                        radius_km=radius_km,
+                        timespan=timespan,
+                        query=query,
+                    )
+
                 feature_count = len(geojson.get("features", []))
                 logger.info(
                     "MDA zone [%s] (%s): %d features",
@@ -376,22 +410,45 @@ class GDELTGeoAPI:
 
 
 def main() -> None:
-    """CLI convenience -- run a sweep of all MDA zones."""
+    """CLI: run a sweep of all MDA zones, optionally on a loop."""
+    import argparse
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
+
+    ap = argparse.ArgumentParser(description="GDELT GEO API MDA zone sweep")
+    ap.add_argument(
+        "--loop",
+        type=int,
+        default=0,
+        metavar="SECONDS",
+        help="Re-run the sweep every N seconds (default: one-shot)",
+    )
+    args = ap.parse_args()
+
     client = GDELTGeoAPI(publish_to_kafka=True)
+    iteration = 0
     try:
-        results = client.search_mda_zones(timespan="7d")
-        total_features = sum(
-            len(r.get("features", [])) for r in results.values()
-        )
-        logger.info(
-            "MDA zone sweep complete: %d zones, %d total features",
-            len(results),
-            total_features,
-        )
+        while True:
+            iteration += 1
+            logger.info("GEO API sweep iteration %d starting", iteration)
+            try:
+                results = client.search_mda_zones(timespan="7d")
+                total_features = sum(
+                    len(r.get("features", [])) for r in results.values()
+                )
+                logger.info(
+                    "GEO API sweep iteration %d complete: %d zones, %d features",
+                    iteration, len(results), total_features,
+                )
+            except Exception:
+                logger.exception("GEO sweep iteration %d failed", iteration)
+            if args.loop <= 0:
+                break
+            logger.info("Sleeping %ds before next sweep", args.loop)
+            time.sleep(args.loop)
     finally:
         client.close()
 

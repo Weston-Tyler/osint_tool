@@ -22,32 +22,38 @@ DOC_API_BASE_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
 TOPIC_DOC_ARTICLES = "mda.gdelt.doc.articles"
 
-# Pre-built MDA domain query templates
+# Pre-built MDA domain query templates.
+# GDELT DOC query syntax: quotes = exact phrase, parentheses = OR groups,
+# theme:CODE filters by GKG theme. Wrapping an OR clause in quotes searches
+# for the literal phrase including the word "OR", so use parentheses instead.
 MDA_QUERY_TEMPLATES: dict[str, dict[str, str]] = {
     "cartel_mexico": {
-        "query": '"cartel OR narco OR trafficking" sourcecountry:MX',
+        "query": "(cartel OR narco OR trafficking) sourcecountry:MX",
         "description": "Cartel and narcotics activity in Mexico",
     },
     "maritime_piracy": {
-        "query": '"maritime piracy OR vessel seizure" theme:MARITIME',
+        "query": "(maritime piracy OR vessel seizure) theme:MARITIME",
         "description": "Maritime piracy and vessel seizure events",
     },
     "sanctions_evasion": {
-        "query": '"sanctions evasion OR flag state" theme:SANCTIONS',
+        "query": "(sanctions evasion OR flag state) theme:SANCTIONS",
         "description": "Sanctions evasion and flag state issues",
     },
     "fentanyl_seizure": {
-        "query": '"fentanyl OR cocaine seizure"',
+        "query": "(fentanyl OR cocaine) (seizure OR seized OR confiscated)",
         "description": "Fentanyl and cocaine seizure reports",
     },
     "drone_border": {
-        "query": '"drone border OR UAS incursion"',
+        "query": "(drone OR UAS) (border OR incursion)",
         "description": "Drone and UAS border incursion reports",
     },
 }
 
-# Minimum interval between API requests (seconds)
-_RATE_LIMIT_INTERVAL = 1.0
+# Minimum interval between API requests (seconds). GDELT free tier
+# recommends >= 2s; we use 3s with backoff for safety.
+_RATE_LIMIT_INTERVAL = 3.0
+_MAX_RETRIES = 4
+_BACKOFF_BASE = 5.0
 
 
 class GDELTDocAPI:
@@ -84,16 +90,31 @@ class GDELTDocAPI:
     # ------------------------------------------------------------------
 
     def _rate_limited_get(self, params: dict[str, Any]) -> requests.Response:
-        """Execute a GET request with rate limiting (max 1 req/sec)."""
-        elapsed = time.monotonic() - self._last_request_time
-        if elapsed < _RATE_LIMIT_INTERVAL:
-            time.sleep(_RATE_LIMIT_INTERVAL - elapsed)
+        """Execute a GET request with rate limiting and 429/5xx backoff."""
+        for attempt in range(_MAX_RETRIES + 1):
+            elapsed = time.monotonic() - self._last_request_time
+            if elapsed < _RATE_LIMIT_INTERVAL:
+                time.sleep(_RATE_LIMIT_INTERVAL - elapsed)
 
-        logger.debug("DOC API request params: %s", params)
-        resp = self._session.get(DOC_API_BASE_URL, params=params, timeout=60)
-        self._last_request_time = time.monotonic()
-        resp.raise_for_status()
-        return resp
+            logger.debug("DOC API request params: %s", params)
+            resp = self._session.get(DOC_API_BASE_URL, params=params, timeout=60)
+            self._last_request_time = time.monotonic()
+
+            if resp.status_code in (429, 502, 503, 504):
+                if attempt >= _MAX_RETRIES:
+                    resp.raise_for_status()
+                delay = _BACKOFF_BASE * (2 ** attempt)
+                logger.warning(
+                    "DOC API %d on attempt %d/%d, sleeping %ds before retry",
+                    resp.status_code, attempt + 1, _MAX_RETRIES + 1, int(delay),
+                )
+                time.sleep(delay)
+                continue
+
+            resp.raise_for_status()
+            return resp
+        # Unreachable, but mypy/lint demands a return
+        raise RuntimeError("retry loop exited without returning")
 
     # ------------------------------------------------------------------
     # Core search methods
@@ -267,20 +288,56 @@ class GDELTDocAPI:
             self._producer = None
 
 
+def _sweep_once(client: "GDELTDocAPI") -> int:
+    """Run one sweep of all MDA domain templates, returning total article count."""
+    total = 0
+    for domain in MDA_QUERY_TEMPLATES:
+        try:
+            articles = client.search_mda_domain(domain, timespan="7d")
+            logger.info("Domain [%s]: %d articles", domain, len(articles))
+            total += len(articles)
+        except Exception:
+            logger.exception("Error searching domain %s", domain)
+    return total
+
+
 def main() -> None:
-    """CLI convenience -- run a default sweep of all MDA domain templates."""
+    """CLI: run a sweep of all MDA domain templates, optionally on a loop."""
+    import argparse
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
+
+    ap = argparse.ArgumentParser(description="GDELT DOC API MDA sweep")
+    ap.add_argument(
+        "--loop",
+        type=int,
+        default=0,
+        metavar="SECONDS",
+        help="Re-run the sweep every N seconds (default: one-shot)",
+    )
+    args = ap.parse_args()
+
     client = GDELTDocAPI(publish_to_kafka=True)
+    iteration = 0
     try:
-        for domain in MDA_QUERY_TEMPLATES:
+        while True:
+            iteration += 1
+            logger.info("DOC API sweep iteration %d starting", iteration)
             try:
-                articles = client.search_mda_domain(domain, timespan="7d")
-                logger.info("Domain [%s]: %d articles", domain, len(articles))
+                total = _sweep_once(client)
+                logger.info(
+                    "DOC API sweep iteration %d complete: %d total articles",
+                    iteration, total,
+                )
             except Exception:
-                logger.exception("Error searching domain %s", domain)
+                logger.exception("Sweep iteration %d failed", iteration)
+            if args.loop <= 0:
+                break
+            logger.info("Sleeping %ds before next sweep", args.loop)
+            time.sleep(args.loop)
     finally:
         client.close()
 
