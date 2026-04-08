@@ -25,11 +25,12 @@ TOPIC_TV_CLIPS = "mda.gdelt.tv.clips"
 TOPIC_TV_NARRATIVE_SHIFTS = "mda.gdelt.tv.narrative_shifts"
 
 # Minimum interval between API requests (seconds). GDELT enforces a
-# global 5s/IP limit (returns 429 with "limit requests to one every
-# 5 seconds" message). We use 5.5s for safety margin.
-_RATE_LIMIT_INTERVAL = 5.5
+# global 5s/IP limit and applies extended cooldowns after bursts. We
+# use 8s spacing + 60s startup cooldown to avoid tripping the throttle.
+_RATE_LIMIT_INTERVAL = 8.0
 _MAX_RETRIES = 4
-_BACKOFF_BASE = 6.0
+_BACKOFF_BASE = 10.0
+_STARTUP_COOLDOWN_SEC = 60
 
 # Pre-defined MDA monitoring keywords
 MDA_MONITOR_KEYWORDS: list[str] = [
@@ -477,6 +478,14 @@ def main() -> None:
         help="Re-run the sweep every N seconds (default: one-shot)",
     )
     args = ap.parse_args()
+
+    if _STARTUP_COOLDOWN_SEC > 0:
+        logger.info(
+            "TV API startup cooldown: sleeping %ds before first request "
+            "to escape any extended IP throttle",
+            _STARTUP_COOLDOWN_SEC,
+        )
+        time.sleep(_STARTUP_COOLDOWN_SEC)
 
     client = GDELTTvAPI(publish_to_kafka=True)
     iteration = 0

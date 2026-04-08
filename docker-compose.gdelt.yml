@@ -3,7 +3,7 @@
 
 services:
 
-  # ── GDELT GKG Ingester (15-minute poll) ──────────────────
+  # ── GDELT GKG Ingester (bulk download, 15-min poll) ──────
   gdelt-gkg-worker:
     build:
       context: ./workers/gdelt
@@ -11,6 +11,23 @@ services:
     container_name: mda-gdelt-gkg
     restart: unless-stopped
     command: ["python", "-u", "gkg_ingester.py"]
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+    depends_on:
+      - redpanda
+    networks:
+      - mda-net
+
+  # ── GDELT Events + Mentions Ingester (bulk download, 15-min poll) ──
+  # Bulk-download path on data.gdeltproject.org has NO rate limiting,
+  # unlike the search APIs (DOC/GEO/TV) on api.gdeltproject.org.
+  gdelt-events-worker:
+    build:
+      context: ./workers/gdelt
+      dockerfile: Dockerfile
+    container_name: mda-gdelt-events
+    restart: unless-stopped
+    command: ["python", "-u", "gdelt_ingester.py", "--loop", "900"]
     environment:
       KAFKA_BOOTSTRAP: redpanda:9092
     depends_on:

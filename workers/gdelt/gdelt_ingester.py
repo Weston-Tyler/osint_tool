@@ -1,9 +1,14 @@
-"""GDELT 2.0 event ingestion for MDA-relevant events.
+"""GDELT 2.0 event + mentions ingestion via bulk file downloads.
 
-Fetches the latest 15-minute GDELT event files and filters for maritime,
-drug trafficking, and law enforcement events in MDA-relevant regions.
+Fetches the latest 15-minute GDELT event AND mentions files from the
+public bulk-download mirror and filters for maritime, drug trafficking,
+and law enforcement activity in MDA-relevant regions.
+
+Bulk downloads bypass the rate-limited search APIs (DOC/GEO/TV) entirely,
+so this ingester is reliable from any IP.
 
 Source: https://analysis.gdeltproject.org/module-event-exporter.html
+        http://data.gdeltproject.org/gdeltv2/masterfilelist.txt
 """
 
 import csv
@@ -11,6 +16,7 @@ import io
 import json
 import logging
 import os
+import time
 import zipfile
 from datetime import datetime
 
@@ -21,6 +27,16 @@ logger = logging.getLogger("mda.worker.gdelt")
 
 GDELT_MASTER_URL = "http://data.gdeltproject.org/gdeltv2/masterfilelist.txt"
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
+TOPIC_EVENTS = "mda.events.gdelt.raw"
+TOPIC_MENTIONS = "mda.events.gdelt.mentions"
+
+# GDELT 2.0 mentions column header (16 columns)
+GDELT_MENTIONS_HEADER = [
+    "GlobalEventID", "EventTimeDate", "MentionTimeDate", "MentionType",
+    "MentionSourceName", "MentionIdentifier", "SentenceID", "Actor1CharOffset",
+    "Actor2CharOffset", "ActionCharOffset", "InRawText", "Confidence",
+    "MentionDocLen", "MentionDocTone", "MentionDocTranslationInfo", "Extras",
+]
 
 # GDELT 2.0 event column header (56 columns)
 GDELT_EVENTS_HEADER = [
@@ -110,29 +126,32 @@ def normalize_gdelt_event(row: dict) -> dict:
     }
 
 
-def fetch_latest_gdelt_events_url() -> str | None:
-    """Get URL of latest GDELT 2.0 events export file."""
+def fetch_latest_url(suffix: str) -> str | None:
+    """Get URL of the most recent file matching a suffix in the master list.
+
+    suffix examples: ".export.CSV.zip", ".mentions.CSV.zip", ".gkg.csv.zip"
+    """
     resp = requests.get(GDELT_MASTER_URL, timeout=30)
     resp.raise_for_status()
 
     for line in reversed(resp.text.strip().split("\n")):
-        if ".export.CSV.zip" in line:
+        if suffix in line:
             parts = line.split()
             return parts[-1].strip()
     return None
 
 
-def ingest_latest():
-    """Fetch latest 15-minute GDELT events and publish MDA-relevant ones to Kafka."""
-    producer = KafkaProducer(
-        bootstrap_servers=KAFKA_BOOTSTRAP,
-        value_serializer=lambda v: json.dumps(v, default=str).encode("utf-8"),
-    )
+def fetch_latest_gdelt_events_url() -> str | None:
+    """Compatibility shim for older callers."""
+    return fetch_latest_url(".export.CSV.zip")
 
-    url = fetch_latest_gdelt_events_url()
+
+def ingest_events(producer: KafkaProducer) -> int:
+    """Fetch + publish the latest 15-minute GDELT events file. Returns count."""
+    url = fetch_latest_url(".export.CSV.zip")
     if not url:
         logger.error("Could not find latest GDELT events file")
-        return
+        return 0
 
     logger.info("Downloading GDELT events: %s", url)
     resp = requests.get(url, timeout=60)
@@ -147,18 +166,112 @@ def ingest_latest():
                 fieldnames=GDELT_EVENTS_HEADER,
                 delimiter="\t",
             )
-
             for row in reader:
                 if is_mda_relevant(row):
                     event = normalize_gdelt_event(row)
-                    producer.send("mda.events.gdelt.raw", event)
+                    producer.send(TOPIC_EVENTS, event)
                     count += 1
-
-    producer.flush()
-    producer.close()
     logger.info("Published %d MDA-relevant GDELT events", count)
+    return count
+
+
+def ingest_mentions(producer: KafkaProducer) -> int:
+    """Fetch + publish the latest 15-minute GDELT mentions file.
+
+    Mentions records every news article that references a given event,
+    so they're keyed by GlobalEventID and provide the article-level
+    discovery layer for events. We publish them all (no MDA filter)
+    because the join key is the event ID, and downstream consumers
+    can filter against the events topic.
+    """
+    url = fetch_latest_url(".mentions.CSV.zip")
+    if not url:
+        logger.error("Could not find latest GDELT mentions file")
+        return 0
+
+    logger.info("Downloading GDELT mentions: %s", url)
+    resp = requests.get(url, timeout=60)
+    resp.raise_for_status()
+
+    count = 0
+    with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+        with zf.open(zf.namelist()[0]) as f:
+            text = f.read().decode("utf-8", errors="replace")
+            reader = csv.DictReader(
+                io.StringIO(text),
+                fieldnames=GDELT_MENTIONS_HEADER,
+                delimiter="\t",
+            )
+            for row in reader:
+                mention = {
+                    "event_id": f"gdelt_{row.get('GlobalEventID', '')}",
+                    "source": "gdelt_mentions",
+                    "event_time": row.get("EventTimeDate", ""),
+                    "mention_time": row.get("MentionTimeDate", ""),
+                    "mention_type": row.get("MentionType", ""),
+                    "mention_source": row.get("MentionSourceName", ""),
+                    "mention_url": row.get("MentionIdentifier", ""),
+                    "confidence": _safe_float(row.get("Confidence")),
+                    "tone": _safe_float(row.get("MentionDocTone")),
+                    "doc_length": _safe_int(row.get("MentionDocLen")),
+                    "ingest_time": datetime.utcnow().isoformat(),
+                }
+                producer.send(TOPIC_MENTIONS, mention)
+                count += 1
+    logger.info("Published %d GDELT mention records", count)
+    return count
+
+
+def ingest_latest():
+    """Fetch latest events + mentions in one pass and publish to Kafka."""
+    producer = KafkaProducer(
+        bootstrap_servers=KAFKA_BOOTSTRAP,
+        value_serializer=lambda v: json.dumps(v, default=str).encode("utf-8"),
+    )
+    try:
+        events = ingest_events(producer)
+        mentions = ingest_mentions(producer)
+        logger.info(
+            "Iteration complete: %d events + %d mentions", events, mentions
+        )
+    finally:
+        producer.flush()
+        producer.close()
+
+
+def main():
+    import argparse
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+    )
+
+    ap = argparse.ArgumentParser(
+        description="GDELT 2.0 events + mentions bulk ingester"
+    )
+    ap.add_argument(
+        "--loop",
+        type=int,
+        default=0,
+        metavar="SECONDS",
+        help="Re-fetch every N seconds (default: one-shot)",
+    )
+    args = ap.parse_args()
+
+    iteration = 0
+    while True:
+        iteration += 1
+        logger.info("GDELT events+mentions iteration %d starting", iteration)
+        try:
+            ingest_latest()
+        except Exception:
+            logger.exception("Iteration %d failed", iteration)
+        if args.loop <= 0:
+            break
+        logger.info("Sleeping %ds before next iteration", args.loop)
+        time.sleep(args.loop)
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    ingest_latest()
+    main()
