@@ -35,20 +35,26 @@ services:
       - mda-net
 
   # ── GDELT GEO API Poller ─────────────────────────────────
-  gdelt-geo-worker:
-    build:
-      context: ./workers/gdelt
-      dockerfile: Dockerfile
-    container_name: mda-gdelt-geo
-    restart: unless-stopped
-    # Sweep all MDA zones every 15 min
-    command: ["python", "-u", "geo_api.py", "--loop", "900"]
-    environment:
-      KAFKA_BOOTSTRAP: redpanda:9092
-    depends_on:
-      - redpanda
-    networks:
-      - mda-net
+  # DISABLED 2026-04: api.gdeltproject.org/api/v2/geo/geo returns HTML 404
+  # from the web server itself — the endpoint appears to have been removed.
+  # Geographic data is still ingested via GKG (Locations field on every
+  # record) and can be queried geographically via the DOC API's near: clause.
+  # Re-enable this service if/when GDELT restores GEO 2.0 or we point at a
+  # working alternative.
+  #
+  # gdelt-geo-worker:
+  #   build:
+  #     context: ./workers/gdelt
+  #     dockerfile: Dockerfile
+  #   container_name: mda-gdelt-geo
+  #   restart: unless-stopped
+  #   command: ["python", "-u", "geo_api.py", "--loop", "900"]
+  #   environment:
+  #     KAFKA_BOOTSTRAP: redpanda:9092
+  #   depends_on:
+  #     - redpanda
+  #   networks:
+  #     - mda-net
 
   # ── GDELT TV API Monitor ─────────────────────────────────
   gdelt-tv-worker:

@@ -22,15 +22,19 @@ GEO_API_BASE_URL = "https://api.gdeltproject.org/api/v2/geo/geo"
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
 TOPIC_GEO_EVENTS = "mda.gdelt.geo.events"
 
-# Minimum interval between API requests (seconds). GDELT free tier
-# recommends >= 2s; we use 3s with backoff for safety.
-_RATE_LIMIT_INTERVAL = 3.0
+# Minimum interval between API requests (seconds). GDELT enforces a
+# global 5s/IP limit; we use 5.5s for safety margin.
+_RATE_LIMIT_INTERVAL = 5.5
 _MAX_RETRIES = 4
-_BACKOFF_BASE = 5.0
+_BACKOFF_BASE = 6.0
 
-# GDELT GEO API "near:" syntax has practical radius limits — large radii
-# return 404. Cap it at 500 km; for larger zones, fall back to a plain
-# country/keyword query without the near operator.
+# Heads up: as of 2026-04, the GDELT GEO 2.0 endpoint
+# (https://api.gdeltproject.org/api/v2/geo/geo) appears to return HTML
+# 404 from the web server, suggesting the endpoint was removed. The
+# rate-limit/backoff/loop scaffolding here is preserved in case GDELT
+# restores the endpoint or we point at a working alternative; in the
+# meantime, geographic data should be sourced from GKG (Locations field)
+# and the DOC API with `near:lat,lon,radius` query syntax.
 _MAX_NEAR_RADIUS_KM = 500.0
 
 # Pre-defined MDA maritime zones of interest

@@ -49,11 +49,12 @@ MDA_QUERY_TEMPLATES: dict[str, dict[str, str]] = {
     },
 }
 
-# Minimum interval between API requests (seconds). GDELT free tier
-# recommends >= 2s; we use 3s with backoff for safety.
-_RATE_LIMIT_INTERVAL = 3.0
+# Minimum interval between API requests (seconds). GDELT enforces a
+# global 5s/IP limit (returns 429 with "limit requests to one every
+# 5 seconds" message). We use 5.5s for safety margin.
+_RATE_LIMIT_INTERVAL = 5.5
 _MAX_RETRIES = 4
-_BACKOFF_BASE = 5.0
+_BACKOFF_BASE = 6.0
 
 
 class GDELTDocAPI:
