@@ -305,6 +305,11 @@ services:
       dockerfile: Dockerfile
     container_name: mda-worker-sanctions
     restart: unless-stopped
+    # Daemonized OpenSanctions Kafka feed (re-fetches every 24h).
+    # Complements opensanctions-sync (corporate overlay), which writes
+    # the FtM-normalized graph; this one publishes the raw Kafka stream
+    # for downstream consumers (graph-processor, dlq-processor, ES sync).
+    command: ["python", "-u", "opensanctions_ingester.py", "--loop", "86400"]
     environment:
       KAFKA_BOOTSTRAP: redpanda:9092
       MEMGRAPH_BOLT_URL: bolt://memgraph:7687

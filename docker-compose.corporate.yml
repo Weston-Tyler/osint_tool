@@ -1,9 +1,8 @@
 # Corporate Ownership Graph — Docker Compose Extension
 # Usage: docker compose -f docker-compose.yml -f docker-compose.corporate.yml up -d
 #
-# Only `ownership-api` starts by default. All ingesters and detectors are
-# one-shot CLIs that require source data or arguments; they live in the
-# `batch` profile and are run on demand:
+# Always-on services: ownership-api, opensanctions-sync.
+# All other ingesters and detectors are batch CLIs run on demand:
 #
 #   docker compose --profile batch run --rm gleif-ingestor
 #   docker compose --profile batch run --rm ch-ingestor <dump.zip>
@@ -64,13 +63,17 @@ services:
     networks: [mda-net]
 
   opensanctions-sync:
-    profiles: ["batch"]
     build:
       context: ./workers/corporate/opensanctions_ftm
     container_name: mda-opensanctions-ftm
-    restart: "no"
+    restart: unless-stopped
+    command: ["--fetch", "--priority-only", "--loop", "86400"]
     environment:
       <<: *common-env
+      OPENSANCTIONS_CACHE: /data/opensanctions
+      KAFKA_BROKER: redpanda:9092
+    volumes:
+      - opensanctions-cache:/data/opensanctions
     depends_on: [memgraph, redpanda]
     networks: [mda-net]
 
@@ -146,3 +149,6 @@ services:
       <<: *common-env
     depends_on: [memgraph]
     networks: [mda-net]
+
+volumes:
+  opensanctions-cache:

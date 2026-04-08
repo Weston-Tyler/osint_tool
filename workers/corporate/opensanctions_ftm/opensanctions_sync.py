@@ -16,8 +16,10 @@ import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Set, Tuple
 
+import requests
 from followthemoney import model
 from followthemoney.proxy import EntityProxy
 from confluent_kafka import Producer
@@ -34,6 +36,8 @@ KAFKA_TOPIC = "mda.corporate.opensanctions.raw"
 MEMGRAPH_HOST = os.getenv("MEMGRAPH_HOST", "memgraph")
 MEMGRAPH_PORT = int(os.getenv("MEMGRAPH_PORT", "7687"))
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "500"))
+CACHE_DIR = Path(os.getenv("OPENSANCTIONS_CACHE", "/data/opensanctions"))
+OPENSANCTIONS_BASE_URL = "https://data.opensanctions.org/datasets/latest"
 
 # Schemas we care about for the corporate ownership graph
 RELEVANT_SCHEMAS: Set[str] = {
@@ -467,6 +471,107 @@ def sync_opensanctions(
     return counts
 
 
+# ---------------------------------------------------------------------------
+# Auto-fetch from data.opensanctions.org
+# ---------------------------------------------------------------------------
+
+
+def fetch_dataset(
+    dataset: str,
+    cache_dir: Path = CACHE_DIR,
+    max_age_seconds: int = 6 * 3600,
+) -> Path:
+    """Download a single OpenSanctions dataset's entities.ftm.json.
+
+    Caches files locally and re-fetches only when older than max_age_seconds.
+    """
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    target = cache_dir / f"{dataset}.ftm.json"
+    url = f"{OPENSANCTIONS_BASE_URL}/{dataset}/entities.ftm.json"
+
+    if target.exists():
+        age = time.time() - target.stat().st_mtime
+        if age < max_age_seconds:
+            logger.info(
+                "Cache hit for %s (age %ds < %ds)", dataset, int(age), max_age_seconds
+            )
+            return target
+        logger.info("Cache stale for %s (age %ds), refreshing", dataset, int(age))
+
+    logger.info("Downloading %s from %s", dataset, url)
+    tmp = target.with_suffix(target.suffix + ".tmp")
+    resp = requests.get(url, stream=True, timeout=600)
+    resp.raise_for_status()
+    bytes_written = 0
+    with tmp.open("wb") as fh:
+        for chunk in resp.iter_content(chunk_size=1024 * 1024):
+            if chunk:
+                fh.write(chunk)
+                bytes_written += len(chunk)
+    tmp.replace(target)
+    logger.info(
+        "Downloaded %s: %.1f MB to %s", dataset, bytes_written / 1024 / 1024, target
+    )
+    return target
+
+
+def fetch_all_priority(cache_dir: Path = CACHE_DIR) -> List[str]:
+    """Download every dataset in PRIORITY_DATASETS, returning local paths."""
+    paths: List[str] = []
+    for dataset in PRIORITY_DATASETS:
+        try:
+            path = fetch_dataset(dataset, cache_dir=cache_dir)
+            paths.append(str(path))
+        except Exception as exc:
+            logger.exception("Failed to fetch dataset %s: %s", dataset, exc)
+    return paths
+
+
+# ---------------------------------------------------------------------------
+# Daemon loop
+# ---------------------------------------------------------------------------
+
+
+def run_loop(
+    interval_seconds: int,
+    write_kafka: bool = True,
+    write_graph: bool = True,
+    cache_dir: Path = CACHE_DIR,
+) -> None:
+    """Run sync_opensanctions on a fixed interval forever.
+
+    Auto-fetches PRIORITY_DATASETS each iteration. Sleeps interval_seconds
+    between successful runs. On failure, sleeps min(interval, 600) before retry.
+    """
+    iteration = 0
+    while True:
+        iteration += 1
+        started = time.time()
+        logger.info("Sync iteration %d starting", iteration)
+        try:
+            paths = fetch_all_priority(cache_dir=cache_dir)
+            if not paths:
+                logger.warning("No datasets fetched in iteration %d", iteration)
+            else:
+                result = sync_opensanctions(
+                    paths=paths,
+                    write_kafka=write_kafka,
+                    write_graph=write_graph,
+                    datasets=PRIORITY_DATASETS,
+                )
+                logger.info("Sync iteration %d complete: %s", iteration, result)
+            sleep_for = interval_seconds
+        except Exception as exc:
+            logger.exception("Sync iteration %d failed: %s", iteration, exc)
+            sleep_for = min(interval_seconds, 600)
+
+        elapsed = time.time() - started
+        logger.info(
+            "Iteration %d took %.1fs, sleeping %ds", iteration, elapsed, sleep_for
+        )
+        time.sleep(sleep_for)
+
+
 if __name__ == "__main__":
     import argparse
 
@@ -475,18 +580,70 @@ if __name__ == "__main__":
     )
 
     ap = argparse.ArgumentParser(description="OpenSanctions FtM Sync")
-    ap.add_argument("files", nargs="+", help="Paths to .ftm.json JSONL files")
+    ap.add_argument(
+        "files",
+        nargs="*",
+        help="Paths to .ftm.json JSONL files (optional with --fetch)",
+    )
     ap.add_argument("--no-kafka", action="store_true")
     ap.add_argument("--no-graph", action="store_true")
     ap.add_argument(
-        "--priority-only", action="store_true",
+        "--priority-only",
+        action="store_true",
         help="Only process priority datasets",
+    )
+    ap.add_argument(
+        "--fetch",
+        action="store_true",
+        help="Auto-download priority datasets from data.opensanctions.org",
+    )
+    ap.add_argument(
+        "--loop",
+        type=int,
+        default=0,
+        metavar="SECONDS",
+        help="Run continuously, re-fetching every N seconds (implies --fetch)",
+    )
+    ap.add_argument(
+        "--cache-dir",
+        type=Path,
+        default=CACHE_DIR,
+        help=f"Local cache directory for downloaded datasets (default {CACHE_DIR})",
     )
 
     args = ap.parse_args()
+
+    # Daemon mode
+    if args.loop > 0:
+        import sys
+
+        logger.info(
+            "Starting OpenSanctions sync loop, interval=%ds, cache=%s",
+            args.loop,
+            args.cache_dir,
+        )
+        run_loop(
+            interval_seconds=args.loop,
+            write_kafka=not args.no_kafka,
+            write_graph=not args.no_graph,
+            cache_dir=args.cache_dir,
+        )
+        sys.exit(0)  # unreachable; defensive
+
+    # One-shot fetch mode
+    if args.fetch:
+        paths = fetch_all_priority(cache_dir=args.cache_dir)
+        if not paths:
+            ap.error("No datasets could be fetched")
+        files_to_process = paths
+    else:
+        if not args.files:
+            ap.error("Either --fetch or one or more files arguments are required")
+        files_to_process = args.files
+
     datasets = PRIORITY_DATASETS if args.priority_only else None
     result = sync_opensanctions(
-        paths=args.files,
+        paths=files_to_process,
         write_kafka=not args.no_kafka,
         write_graph=not args.no_graph,
         datasets=datasets,

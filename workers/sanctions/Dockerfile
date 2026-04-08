@@ -7,4 +7,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["python", "-u", "ofac_sdn_ingester.py"]
+CMD ["python", "-u", "opensanctions_ingester.py", "--loop", "86400"]

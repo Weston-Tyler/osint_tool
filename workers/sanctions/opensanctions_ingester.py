@@ -141,6 +141,40 @@ def ingest_opensanctions(filepath: Path | None = None):
     logger.info("OpenSanctions ingestion complete: %s", counts)
 
 
+def run_loop(interval_seconds: int) -> None:
+    """Re-ingest OpenSanctions on a fixed interval forever."""
+    import time
+
+    iteration = 0
+    while True:
+        iteration += 1
+        logger.info("OpenSanctions ingest iteration %d starting", iteration)
+        try:
+            ingest_opensanctions()
+            sleep_for = interval_seconds
+        except Exception as exc:
+            logger.exception("Iteration %d failed: %s", iteration, exc)
+            sleep_for = min(interval_seconds, 600)
+        logger.info("Iteration %d done, sleeping %ds", iteration, sleep_for)
+        time.sleep(sleep_for)
+
+
 if __name__ == "__main__":
+    import argparse
+
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    ingest_opensanctions()
+
+    ap = argparse.ArgumentParser(description="OpenSanctions FtM Kafka ingester")
+    ap.add_argument(
+        "--loop",
+        type=int,
+        default=0,
+        metavar="SECONDS",
+        help="Run continuously, re-fetching every N seconds (default: one-shot)",
+    )
+    args = ap.parse_args()
+
+    if args.loop > 0:
+        run_loop(args.loop)
+    else:
+        ingest_opensanctions()
