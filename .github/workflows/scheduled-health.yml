@@ -13,7 +13,7 @@ jobs:
     name: Verify all Docker images
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Pull + verify all compose images
         run: |
           set -e
@@ -37,7 +37,7 @@ jobs:
 
       - name: Create issue on failure
         if: failure()
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const title = `Scheduled: Docker image manifest check failed on ${new Date().toISOString().split('T')[0]}`;
@@ -60,7 +60,7 @@ jobs:
     name: External data source APIs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Check all free data source APIs
         run: |
           ENDPOINTS=(

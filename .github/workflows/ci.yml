@@ -21,7 +21,7 @@ jobs:
     name: Lint (ruff)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -41,7 +41,7 @@ jobs:
       matrix:
         python: ["3.11", "3.12"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
@@ -101,7 +101,7 @@ jobs:
           python -m pytest tests/unit/ --tb=line
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-results-py${{ matrix.python }}
           path: |
@@ -148,9 +148,9 @@ jobs:
           - services/corporate/ownership_api
           - worldfish
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
       - name: Build image (with cache)
         uses: docker/build-push-action@v7
         with:
@@ -166,7 +166,7 @@ jobs:
     name: Schema & Config Validation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Validate JSON
         run: |
           FAIL=0
@@ -223,7 +223,7 @@ jobs:
       GEOSERVER_ADMIN_PASSWORD: test
       API_SECRET_KEY: test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: docker compose -f docker-compose.yml config > /dev/null
       - run: docker compose -f docker-compose.yml -f docker-compose.causal.yml config > /dev/null
       - run: docker compose -f docker-compose.yml -f docker-compose.datasets.yml config > /dev/null
@@ -235,7 +235,7 @@ jobs:
     name: Image Manifest Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Verify all compose images exist on registries
         run: |
           set -e
@@ -271,7 +271,7 @@ jobs:
     name: Shellcheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Run shellcheck
         run: |
           sudo apt-get update -qq
@@ -284,7 +284,7 @@ jobs:
     name: Dockerfile Linting (hadolint)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Run hadolint
         uses: hadolint/hadolint-action@v3.3.0
         with:
