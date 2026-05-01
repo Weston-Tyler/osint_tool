@@ -1,4 +1,4 @@
-mesa>=2.2.0
+mesa>=2.4.0
 ollama>=0.6.2
 numpy>=1.26.0
 gqlalchemy>=1.6.0
