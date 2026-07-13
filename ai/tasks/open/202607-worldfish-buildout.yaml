@@ -1,0 +1,45 @@
+schema: aios/capsule@0.1
+id: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Task/202607-worldfish-buildout
+kind: feature
+goal: Fully build out the WorldFish predictive-event integration
+state: open
+scope:
+  paths:
+  - worldfish/**
+  - tests/**
+  components: []
+  out_of_scope: []
+acceptance:
+- id: ac1
+  criterion: "End-to-end run works from a real seed: seed_extractor -> persona_generator -> simulation_engine -> prediction produces at least one predictive event, via a documented entrypoint (CLI or module)."
+  met: false
+- id: ac2
+  criterion: "A versioned predictive-event output contract is documented and stored in the repo (fields + types), and WorldFish emits to a defined Kafka topic following the mda.<domain>.* convention (e.g. mda.predictions.*)."
+  met: false
+- id: ac3
+  criterion: "Deterministic unit tests cover seed_extractor, persona_generator, memory, and prediction with no live Ollama; plus one integration test that runs the engine against a real or contract-faithful Ollama (not the CI import stub)."
+  met: false
+- id: ac4
+  criterion: "WorldFish runs under docker-compose with env-var config (OLLAMA_BASE_URL, model) documented in .env.example; 'ruff check .' and the unit gate ('python -m pytest tests/unit/') stay green."
+  met: false
+- id: ac5
+  criterion: "Agent memory is bounded (deque maxlen honored) and personas are reproducible given a fixed seed, proven by tests."
+  met: false
+risk: "WorldFish is the predictive-event foundation; leaving it half-wired blocks the predictive roadmap. Ollama and mesa are external and CI-stubbed, so CI tests must not depend on a live model. Keep the diff inside worldfish/** + tests/**."
+budget:
+  tokens: 30000
+  subagents: 0
+decisions:
+- when: 2026-07-13
+  what: "Scope to worldfish/** + tests/**; defer downstream consumer wiring (graph-processor / API) to a follow-up capsule."
+  why: "Keep the diff in scope; the predictive-event output contract (ac2) is the integration seam a consumer binds to later."
+attempts: []
+questions:
+- "Which predictive-event types/domains should WorldFish emit first (illicit-maritime, cartel, counter-narcotics, C-UAS)?"
+- "Is Ollama qwen2.5:7b (the current default in simulation_engine.py) the intended target model, or should it stay fully configurable?"
+- "Should predictive events land on a new mda.predictions.* topic consumed by the graph-processor, or be written directly to Memgraph/PostGIS?"
+next_action: "Plan slice 1 — pin the predictive-event output contract (ac2: schema + mda.* topic), then wire seed -> persona -> sim -> prediction end-to-end (ac1) behind it."
+branch: main
+base_commit: be401148a0e66f10d2041c9a295bfa4683c46f2a
+created_by: agent:claude-code
+created_at: '2026-07-13'
