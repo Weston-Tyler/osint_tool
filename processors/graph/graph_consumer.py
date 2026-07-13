@@ -9,9 +9,15 @@ import logging
 import os
 from datetime import datetime
 
-import asyncpg
-from gqlalchemy import Memgraph
 from kafka import KafkaConsumer
+
+# graph_consumer runs both as a script (Dockerfile: `python graph_consumer.py`)
+# and as a package module (tests import processors.graph.graph_consumer), so
+# support both import contexts.
+try:
+    from . import prediction_transform
+except ImportError:  # script context — same directory on sys.path
+    import prediction_transform
 
 logger = logging.getLogger("mda.processor.graph")
 
@@ -29,6 +35,8 @@ TOPICS = [
     "mda.uas.detections.raw",
     "mda.events.gdelt.raw",
     "mda.interdictions.new",
+    # WorldFish predictive events (see worldfish/PREDICTION_CONTRACT.md)
+    "mda.predictions.worldfish",
     # GFW v3 — full-coverage ingester topics (see workers/ais/gfw_full_ingester.py)
     "mda.gfw.encounters",
     "mda.gfw.loitering",
@@ -44,11 +52,38 @@ TOPICS = [
 class GraphProcessor:
     """Consumes Kafka events and writes to Memgraph and PostGIS."""
 
-    def __init__(self):
-        self.memgraph = Memgraph(host=MEMGRAPH_HOST, port=MEMGRAPH_PORT)
+    def __init__(self, memgraph=None, dlq_producer=None):
+        # Connections are lazy/injectable so the module is importable and
+        # testable without gqlalchemy / a live Memgraph or broker.
+        self._memgraph = memgraph
+        self._dlq_producer = dlq_producer
         self.pg_pool = None
 
+    @property
+    def memgraph(self):
+        if self._memgraph is None:
+            from gqlalchemy import Memgraph
+
+            self._memgraph = Memgraph(host=MEMGRAPH_HOST, port=MEMGRAPH_PORT)
+        return self._memgraph
+
+    def _to_dlq(self, topic: str, raw: dict, error: Exception) -> None:
+        """Route a bad message to mda.dlq (shape matches dlq_processor.py)."""
+        if self._dlq_producer is None:
+            from kafka import KafkaProducer
+
+            self._dlq_producer = KafkaProducer(
+                bootstrap_servers=KAFKA_BOOTSTRAP,
+                value_serializer=lambda v: json.dumps(v, default=str).encode("utf-8"),
+            )
+        self._dlq_producer.send(
+            "mda.dlq",
+            {"source": "worldfish", "_original_topic": topic, "error": str(error), "raw": raw},
+        )
+
     async def init_postgres(self):
+        import asyncpg
+
         self.pg_pool = await asyncpg.create_pool(dsn=POSTGRES_DSN, min_size=5, max_size=20)
 
     def upsert_vessel_position(self, msg: dict):
@@ -437,6 +472,43 @@ class GraphProcessor:
             },
         )
 
+    # ── WorldFish predictions ───────────────────────────────────────
+    def upsert_predicted_event(self, msg: dict):
+        """Upsert a WorldFish :PredictedEvent; malformed envelopes go to the DLQ."""
+        try:
+            cypher, params = prediction_transform.build_predicted_event_cypher(msg)
+        except prediction_transform.PredictionContractError as e:
+            self._to_dlq("mda.predictions.worldfish", msg, e)
+            return
+        self.memgraph.execute(cypher, params)
+        link = prediction_transform.build_trigger_link_cypher(msg)
+        if link:
+            self.memgraph.execute(*link)
+
+    async def insert_predicted_event_postgis(self, msg: dict):
+        """Insert a predicted event into PostGIS when it carries a location."""
+        if not self.pg_pool or not prediction_transform.has_location(msg):
+            return
+        inner = (msg.get("payload") or {}).get("payload") or {}
+        loc = inner.get("location") or {}
+        tf = inner.get("timeframe") or {}
+        async with self.pg_pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO predicted_events (prediction_id, simulation_run_id, predicted_event_type,
+                    domain, confidence, confidence_label, timeframe_min_days, timeframe_max_days,
+                    region, location, causal_trigger, schema_version)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+                    ST_SetSRID(ST_MakePoint($10, $11), 4326), $12, $13)
+                ON CONFLICT (prediction_id) DO UPDATE SET confidence = EXCLUDED.confidence
+                """,
+                msg["prediction_id"], msg.get("simulation_run_id"), msg.get("predicted_event_type"),
+                msg.get("domain"), float(msg.get("confidence", 0) or 0), msg.get("confidence_label"),
+                int(tf.get("min_days", 0) or 0), int(tf.get("max_days", 0) or 0), loc.get("region"),
+                loc.get("lon"), loc.get("lat"), (inner.get("causal_chain") or {}).get("trigger"),
+                msg.get("schema_version"),
+            )
+
     def process_message(self, topic: str, msg: dict):
         """Route a Kafka message to the appropriate handler."""
         try:
@@ -471,6 +543,8 @@ class GraphProcessor:
                 self.upsert_gfw_insight(msg)
             elif topic == "mda.gfw.sar_detections":
                 pass  # SAR detections come without vessel IDs; geographic only
+            elif topic == "mda.predictions.worldfish":
+                self.upsert_predicted_event(msg)
         except Exception as e:
             logger.error("Error processing message from %s: %s", topic, e, exc_info=True)
 
