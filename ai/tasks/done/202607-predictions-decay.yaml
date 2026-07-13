@@ -1,0 +1,71 @@
+schema: aios/capsule@0.1
+id: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Task/202607-predictions-decay
+kind: feature
+goal: Apply read-time confidence decay to predictions (age-aware ranking)
+state: done
+scope:
+  paths:
+  - api/**
+  - processors/**
+  - tests/**
+  components: []
+  out_of_scope: []
+acceptance:
+- id: ac1
+  criterion: The consumer stores generated_at on the :PredictedEvent node (prediction_transform), so prediction
+    age can be computed at read time.
+  met: true
+  evidence:
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-decay-01kxenejep
+- id: ac2
+  criterion: The /v1/analytics/predictions endpoint computes each prediction's age-decayed current_confidence
+    + age_days from generated_at and ranks results by current_confidence (fresher-stronger first); missing/unparseable
+    timestamps fall back to the stored confidence with age_days null.
+  met: true
+  evidence:
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-decay-01kxenejep
+- id: ac3
+  criterion: Decay is a pure, unit-testable function (decayed_confidence / enrich_with_decay) that takes
+    'now' as a parameter; no wall-clock or live infra in tests.
+  met: true
+  evidence:
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-decay-01kxenejep
+- id: ac4
+  criterion: Unit tests cover the decay math (t0, aged, missing, unparseable), the freshness ranking,
+    the endpoint carrying the new fields, and the consumer storing generated_at; 'ruff check .' and 'python
+    -m pytest tests/unit/' stay green.
+  met: true
+  evidence:
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-decay-01kxenee5p
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-decay-01kxenejep
+risk: Read-time transform only; does not mutate stored confidence. Decay rate 0.02/day matches CausalPrediction's
+  default; if the producer ever emits a per-prediction rate, thread it through instead of the constant.
+budget:
+  tokens: 30000
+  subagents: 0
+decisions:
+- when: '2026-07-13'
+  what: Decay at read time only (compute current_confidence in the API); never overwrite the stored point
+    confidence.
+  why: Keeps the graph value stable/auditable and lets the decay rate change without a re-ingest.
+- when: '2026-07-13'
+  what: Use a fixed DEFAULT_DECAY_RATE (0.02/day) rather than adding confidence_decay_rate to the v1 envelope.
+  why: The contract does not carry the rate; 0.02 matches CausalPrediction's default. Avoids a contract
+    bump; revisit if per-prediction rates are needed.
+attempts:
+- when: '2026-07-13'
+  approach: Stored generated_at on :PredictedEvent (prediction_transform) and added pure decayed_confidence
+    / enrich_with_decay helpers to the analytics router; the predictions endpoint now enriches rows with
+    current_confidence + age_days and ranks by current_confidence desc.
+  outcome: worked
+  note: ruff clean; unit gate 112 passed / 1 skipped (+7 decay/transform tests). Fresh predictions outrank
+    stale high-confidence ones once decayed.
+questions: []
+next_action: 'Operator: review and close. Remaining predictive-loop idea (needs a realized-event stream):
+  reconcile predicted vs realized events to score model accuracy.'
+branch: main
+base_commit: 81b061f4b7ecbe53e11dcea34a5b92fce30d2722
+created_by: agent:claude-code
+created_at: '2026-07-13'
+modified_at: '2026-07-13'
+closed_at: '2026-07-13'

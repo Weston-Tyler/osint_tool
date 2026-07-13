@@ -1,0 +1,20 @@
+schema: aios/evidence@0.1
+id: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-decay-01kxenee5p
+task: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Task/202607-predictions-decay
+criteria:
+- ac4
+kind: lint
+outcome: pass
+command: ruff check .
+exit_code: 0
+output_tail: 'All checks passed!
+
+  '
+duration_ms: 128
+at: '2026-07-13T21:17:05+00:00'
+environment:
+  python: 3.13.1
+  platform: win32
+  commit: 81b061f4b7ecbe53e11dcea34a5b92fce30d2722
+  dirty: true
+created_by: person:wta17

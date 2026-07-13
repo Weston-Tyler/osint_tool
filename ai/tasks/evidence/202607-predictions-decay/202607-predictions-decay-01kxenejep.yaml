@@ -1,0 +1,25 @@
+schema: aios/evidence@0.1
+id: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-decay-01kxenejep
+task: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Task/202607-predictions-decay
+criteria:
+- ac1
+- ac2
+- ac3
+- ac4
+kind: test-run
+outcome: pass
+command: python -m pytest tests/unit/test_predictions_api.py tests/unit/test_prediction_transform.py -q
+exit_code: 0
+output_tail: '........................                                                 [100%]
+
+  24 passed in 1.26s
+
+  '
+duration_ms: 3610
+at: '2026-07-13T21:17:09+00:00'
+environment:
+  python: 3.13.1
+  platform: win32
+  commit: 81b061f4b7ecbe53e11dcea34a5b92fce30d2722
+  dirty: true
+created_by: person:wta17
