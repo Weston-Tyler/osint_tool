@@ -1,0 +1,29 @@
+schema: aios/evidence@0.1
+id: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-consumer-01kxeehebw
+task: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Task/202607-predictions-consumer
+criteria:
+- ac1
+- ac2
+- ac3
+- ac4
+- ac5
+kind: test-run
+outcome: pass
+command: python -m pytest tests/unit/ -q
+exit_code: 0
+output_tail: "datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version.\
+  \ Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).\n \
+  \   \"ingest_time\": datetime.utcnow().isoformat(),\n\ntests/unit/test_sanctions_ingester.py::TestFTMOrganization::test_parse_organization\n\
+  \  C:\\Users\\wta17\\workspaces\\side projects\\osint_tool\\osint_tool\\workers\\sanctions\\opensanctions_ingester.py:102:\
+  \ DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future\
+  \ version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).\n\
+  \    \"ingest_time\": datetime.utcnow().isoformat(),\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n\
+  99 passed, 1 skipped, 11 warnings in 3.12s\n"
+duration_ms: 5516
+at: '2026-07-13T19:16:23+00:00'
+environment:
+  python: 3.13.1
+  platform: win32
+  commit: 90a12ab3b74afe6125fa3478a270f15861c10900
+  dirty: true
+created_by: person:wta17

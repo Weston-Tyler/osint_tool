@@ -1,0 +1,20 @@
+schema: aios/evidence@0.1
+id: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-consumer-01kxeeh83w
+task: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Task/202607-predictions-consumer
+criteria:
+- ac5
+kind: lint
+outcome: pass
+command: ruff check .
+exit_code: 0
+output_tail: 'All checks passed!
+
+  '
+duration_ms: 110
+at: '2026-07-13T19:16:17+00:00'
+environment:
+  python: 3.13.1
+  platform: win32
+  commit: 90a12ab3b74afe6125fa3478a270f15861c10900
+  dirty: true
+created_by: person:wta17

@@ -1,0 +1,79 @@
+schema: aios/capsule@0.1
+id: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Task/202607-predictions-consumer
+kind: feature
+goal: Consume mda.predictions.worldfish in the graph-processor into Memgraph/PostGIS
+state: done
+scope:
+  paths:
+  - processors/**
+  - schema/**
+  - tests/**
+  components: []
+  out_of_scope: []
+acceptance:
+- id: ac1
+  criterion: The graph-processor subscribes to mda.predictions.worldfish (added to the TOPICS list in
+    processors/graph/graph_consumer.py) and parses the v1.0 envelope (schema, schema_version, payload)
+    without error.
+  met: true
+  evidence:
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-consumer-01kxeehebw
+- id: ac2
+  criterion: Each predicted event is upserted into Memgraph as a typed node (e.g. :PredictedEvent) carrying
+    confidence, predicted_event_type, timeframe, and causal_chain, and linked back to its trigger event
+    / simulation run.
+  met: true
+  evidence:
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-consumer-01kxeehebw
+- id: ac3
+  criterion: 'The data model is extended for predictions: a Memgraph label + index (schema/graph) and,
+    where a location is present, a PostGIS row (schema/relational) — created before the transform relies
+    on them.'
+  met: true
+  evidence:
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-consumer-01kxeehebw
+- id: ac4
+  criterion: Malformed or unknown-schema_version envelopes are routed to the DLQ (consistent with dlq_processor.py),
+    never crashing the consumer.
+  met: true
+  evidence:
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-consumer-01kxeehebw
+- id: ac5
+  criterion: Unit tests cover the envelope->graph transform (valid, malformed, and unknown-version cases)
+    with no live Memgraph/Kafka; 'ruff check .' and 'python -m pytest tests/unit/' stay green.
+  met: true
+  evidence:
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-consumer-01kxeeh83w
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-consumer-01kxeehebw
+risk: This closes the loop from WorldFish to the operational graph. The graph-processor is the sole writer
+  to Memgraph/PostGIS, so a bad transform corrupts the store for every downstream consumer — keep it defensive
+  and DLQ-first.
+budget:
+  tokens: 30000
+  subagents: 0
+decisions:
+- when: '2026-07-13'
+  what: Bind to the v1.0 contract in worldfish/PREDICTION_CONTRACT.md; treat unknown minor versions as
+    forward-compatible (ignore unknown keys) and unknown major versions as DLQ.
+  why: The producer (WorldFish) already emits the versioned envelope; the consumer is the other half of
+    the seam defined in capsule 202607-worldfish-buildout.
+- when: '2026-07-13'
+  what: Predictions enter via Kafka only (no direct WorldFish->DB path), matching the platform's single-write-path
+    pattern.
+  why: Consistent with the graph-processor being the sole writer to the stores.
+attempts: []
+questions:
+- 'Node model: one :PredictedEvent node linked to the trigger :Event, or a :Prediction node distinct from
+  realized events? (Affects how confidence decay and later realized-vs-predicted reconciliation work.)'
+- Should predictions surface in the API (e.g. a /v1/analytics/predictions endpoint) in this capsule, or
+  is that a further follow-up?
+next_action: Plan slice 1 - add mda.predictions.worldfish to graph_consumer TOPICS and a memgraph_transform
+  handler that upserts a :PredictedEvent node from the envelope; add the schema/graph label+index; unit-test
+  the transform (valid + DLQ paths).
+branch: main
+base_commit: f7066f5786e8d26d82cac23dcac541a760d39fdd
+created_by: agent:claude-code
+created_at: '2026-07-13'
+modified_at: '2026-07-13'
+resumed_at: '2026-07-13'
+closed_at: '2026-07-13'
