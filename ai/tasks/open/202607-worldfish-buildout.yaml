@@ -2,7 +2,7 @@ schema: aios/capsule@0.1
 id: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Task/202607-worldfish-buildout
 kind: feature
 goal: Fully build out the WorldFish predictive-event integration
-state: open
+state: active
 scope:
   paths:
   - worldfish/**
@@ -11,41 +11,81 @@ scope:
   out_of_scope: []
 acceptance:
 - id: ac1
-  criterion: "End-to-end run works from a real seed: seed_extractor -> persona_generator -> simulation_engine -> prediction produces at least one predictive event, via a documented entrypoint (CLI or module)."
-  met: false
+  criterion: 'End-to-end run works from a real seed: seed_extractor -> persona_generator -> simulation_engine
+    -> prediction produces at least one predictive event, via a documented entrypoint (CLI or module).'
+  met: true
+  evidence: []
 - id: ac2
-  criterion: "A versioned predictive-event output contract is documented and stored in the repo (fields + types), and WorldFish emits to a defined Kafka topic following the mda.<domain>.* convention (e.g. mda.predictions.*)."
-  met: false
+  criterion: A versioned predictive-event output contract is documented and stored in the repo (fields
+    + types), and WorldFish emits to a defined Kafka topic following the mda.<domain>.* convention (e.g.
+    mda.predictions.*).
+  met: true
+  evidence: []
 - id: ac3
-  criterion: "Deterministic unit tests cover seed_extractor, persona_generator, memory, and prediction with no live Ollama; plus one integration test that runs the engine against a real or contract-faithful Ollama (not the CI import stub)."
-  met: false
+  criterion: Deterministic unit tests cover seed_extractor, persona_generator, memory, and prediction
+    with no live Ollama; plus one integration test that runs the engine against a real or contract-faithful
+    Ollama (not the CI import stub).
+  met: true
+  evidence: []
 - id: ac4
-  criterion: "WorldFish runs under docker-compose with env-var config (OLLAMA_BASE_URL, model) documented in .env.example; 'ruff check .' and the unit gate ('python -m pytest tests/unit/') stay green."
-  met: false
+  criterion: WorldFish runs under docker-compose with env-var config (OLLAMA_BASE_URL, model) documented
+    in .env.example; 'ruff check .' and the unit gate ('python -m pytest tests/unit/') stay green.
+  met: true
+  evidence: []
 - id: ac5
-  criterion: "Agent memory is bounded (deque maxlen honored) and personas are reproducible given a fixed seed, proven by tests."
-  met: false
-risk: "WorldFish is the predictive-event foundation; leaving it half-wired blocks the predictive roadmap. Ollama and mesa are external and CI-stubbed, so CI tests must not depend on a live model. Keep the diff inside worldfish/** + tests/**."
+  criterion: Agent memory is bounded (deque maxlen honored) and personas are reproducible given a fixed
+    seed, proven by tests.
+  met: true
+  evidence: []
+risk: WorldFish is the predictive-event foundation; leaving it half-wired blocks the predictive roadmap.
+  Ollama and mesa are external and CI-stubbed, so CI tests must not depend on a live model. Keep the diff
+  inside worldfish/** + tests/**.
 budget:
   tokens: 30000
   subagents: 0
 decisions:
-- when: 2026-07-13
-  what: "Scope to worldfish/** + tests/**; defer downstream consumer wiring (graph-processor / API) to a follow-up capsule."
-  why: "Keep the diff in scope; the predictive-event output contract (ac2) is the integration seam a consumer binds to later."
-- when: 2026-07-13
-  what: "Ollama model stays fully configurable via env var (OLLAMA_LLM_MODEL); do not pin to a single tag."
-  why: "Operator directive (2026-07-13)."
-- when: 2026-07-13
-  what: "WorldFish emits predictive events to a new mda.predictions.* Kafka topic consumed by the graph-processor; it does NOT write to Memgraph/PostGIS directly."
-  why: "Operator asked for the better option. Matches the platform's event-driven pattern: every source produces to Kafka and the graph-processor is the sole writer to the stores, keeping WorldFish decoupled from the DB schema and consistent with candidates kafka-topic-namespace + graph-processor write-path."
-- when: 2026-07-13
-  what: "Provisional: emit illicit-maritime (IMA) predictive events first; revisit after slice 1."
-  why: "Operator unsure of ordering; agent-recommended default — IMA (domain #1) has the richest existing data (AIS/GFW/sanctions) and vessel-behavior prediction is the most natural fit for the agent sim."
-attempts: []
+- when: '2026-07-13'
+  what: Scope to worldfish/** + tests/**; defer downstream consumer wiring (graph-processor / API) to
+    a follow-up capsule.
+  why: Keep the diff in scope; the predictive-event output contract (ac2) is the integration seam a consumer
+    binds to later.
+- when: '2026-07-13'
+  what: Ollama model stays fully configurable via env var (OLLAMA_LLM_MODEL); do not pin to a single tag.
+  why: Operator directive (2026-07-13).
+- when: '2026-07-13'
+  what: WorldFish emits predictive events to a new mda.predictions.worldfish Kafka topic consumed by the
+    graph-processor; it does NOT write to Memgraph/PostGIS directly.
+  why: 'Operator asked for the better option. Matches the platform''s event-driven pattern: every source
+    produces to Kafka and the graph-processor is the sole writer to the stores.'
+- when: '2026-07-13'
+  what: 'Provisional: emit illicit-maritime (IMA) predictive events first; revisit after slice 1.'
+  why: Operator unsure of ordering; agent-recommended default (IMA has the richest existing data).
+- when: '2026-07-13'
+  what: Dropped the hard mesa/ollama/gqlalchemy dependency; the engine ships an internal random-activation
+    scheduler and treats LLM/Kafka/Memgraph as optional injected dependencies.
+  why: Makes the predictive-event foundation runnable and deterministically testable offline (ac1/ac3/ac5);
+    mesa was only used for RandomActivation+DataCollector and was already CI-stubbed.
+- when: '2026-07-13'
+  what: Scope expanded minimally to touch root .env.example for the WorldFish env vars (ac4).
+  why: ac4 requires them documented in .env.example; the docker-compose worldfish-engine service already
+    existed. All code + tests stayed inside the declared scope.
+attempts:
+- when: '2026-07-13'
+  approach: Built the offline-first predictive pipeline end-to-end - versioned output contract
+    (contract.py) + mda.predictions.worldfish topic + Kafka publisher; deterministic generate_predictions;
+    reproducible synthetic personas; engine refactor (internal scheduler, injectable decision policy,
+    predictions wired into run); fixed the n_agents/list, persona-arg, and Dockerfile packaging bugs;
+    added __main__ CLI, build_demo_seed, README + PREDICTION_CONTRACT.
+  outcome: worked
+  note: 'ruff clean; unit gate 85 passed / 1 skipped (+22 worldfish tests); integration 2 passed; python
+    -m worldfish emits a prediction and is deterministic per --rng-seed. All 5 acceptance criteria met;
+    left open for operator review + formal close.'
 questions: []
-next_action: "Plan slice 1 — pin the predictive-event output contract (ac2: schema + mda.* topic), then wire seed -> persona -> sim -> prediction end-to-end (ac1) behind it."
+next_action: 'Follow-up capsule: wire the graph-processor to consume mda.predictions.worldfish into Memgraph/PostGIS.
+  Then operator: review and close this capsule (record formal evidence via aios verify if desired).'
 branch: main
 base_commit: be401148a0e66f10d2041c9a295bfa4683c46f2a
 created_by: agent:claude-code
 created_at: '2026-07-13'
+modified_at: '2026-07-13'
+resumed_at: '2026-07-13'
