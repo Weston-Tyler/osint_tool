@@ -103,3 +103,72 @@ async def get_ais_gaps_summary(
     )
 
     return {"gap_summary": [dict(r) for r in results], "period_days": days}
+
+
+def build_predictions_query(
+    domain: str | None = None,
+    event_type: str | None = None,
+    min_confidence: float = 0.0,
+    limit: int = 100,
+) -> tuple[str, dict]:
+    """Build the Cypher (+ params) for the WorldFish predictions query.
+
+    Pure and unit-testable. Filter values are parameterized; ``LIMIT`` is inlined
+    as a bounded int literal because Memgraph rejects a parameterized LIMIT
+    (see lesson memgraph-cypher-dialect).
+    """
+    limit = max(1, min(int(limit), 1000))
+    clauses = ["p.confidence >= $min_confidence"]
+    params: dict = {"min_confidence": min_confidence}
+    if domain:
+        clauses.append("p.domain = $domain")
+        params["domain"] = domain
+    if event_type:
+        clauses.append("p.predicted_event_type = $event_type")
+        params["event_type"] = event_type
+    where = " AND ".join(clauses)
+    cypher = f"""
+        MATCH (p:PredictedEvent)
+        WHERE {where}
+        OPTIONAL MATCH (p)-[:PREDICTED_FROM]->(t:Event)
+        RETURN p.prediction_id AS prediction_id,
+               p.predicted_event_type AS predicted_event_type,
+               p.domain AS domain,
+               p.confidence AS confidence,
+               p.confidence_label AS confidence_label,
+               p.predicted_region AS region,
+               p.predicted_lat AS lat,
+               p.predicted_lon AS lon,
+               p.timeframe_min_days AS timeframe_min_days,
+               p.timeframe_max_days AS timeframe_max_days,
+               p.causal_chain_summary AS causal_chain_summary,
+               p.simulation_run_id AS simulation_run_id,
+               t.event_id AS trigger_event_id
+        ORDER BY p.confidence DESC
+        LIMIT {limit}
+    """
+    return cypher, params
+
+
+@router.get("/analytics/predictions")
+async def get_predictions(
+    request: Request,
+    domain: str | None = Query(default=None),
+    event_type: str | None = Query(default=None),
+    min_confidence: float = Query(default=0.0, ge=0.0, le=1.0),
+    limit: int = Query(default=100, ge=1, le=1000),
+):
+    """Get WorldFish predictive events, filterable by domain, type, and confidence."""
+    mg = request.app.state.memgraph
+    cypher, params = build_predictions_query(domain, event_type, min_confidence, limit)
+    results = [dict(r) for r in mg.execute_and_fetch(cypher, params)]
+    return {
+        "predictions": results,
+        "count": len(results),
+        "filters": {
+            "domain": domain,
+            "event_type": event_type,
+            "min_confidence": min_confidence,
+            "limit": limit,
+        },
+    }
