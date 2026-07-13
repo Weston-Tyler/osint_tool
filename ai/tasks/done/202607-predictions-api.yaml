@@ -1,0 +1,71 @@
+schema: aios/capsule@0.1
+id: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Task/202607-predictions-api
+kind: feature
+goal: Add /v1/analytics/predictions API endpoint surfacing WorldFish predictions
+state: done
+scope:
+  paths:
+  - api/**
+  - tests/**
+  components: []
+  out_of_scope: []
+acceptance:
+- id: ac1
+  criterion: GET /v1/analytics/predictions is registered on the analytics router (already mounted under
+    /v1 in api/main.py) and returns predictions read from :PredictedEvent nodes via app.state.memgraph.
+  met: true
+  evidence:
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-api-01kxejwhcz
+- id: ac2
+  criterion: It supports filters domain, event_type, min_confidence (0-1), and limit; results are ordered
+    by confidence desc; the response includes predictions, count, and the echoed filters.
+  met: true
+  evidence:
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-api-01kxejwhcz
+- id: ac3
+  criterion: The Cypher is built by a pure, unit-testable function (build_predictions_query); filter clauses
+    appear only when the filter is provided; LIMIT is inlined as a bounded int literal (Memgraph rejects
+    a parameterized LIMIT).
+  met: true
+  evidence:
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-api-01kxejwhcz
+- id: ac4
+  criterion: Unit tests cover the query builder (with/without filters, confidence floor, limit clamping)
+    and the endpoint response shape via an injected fake Memgraph, with no live infra; 'ruff check .'
+    and 'python -m pytest tests/unit/' stay green.
+  met: true
+  evidence:
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-api-01kxejwd4w
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-api-01kxejwhcz
+risk: Read-only endpoint over the graph; low blast radius. Keep it consistent with the other analytics
+  endpoints (plain dicts, request.app.state.memgraph).
+budget:
+  tokens: 30000
+  subagents: 0
+decisions:
+- when: '2026-07-13'
+  what: Return plain dicts (no Pydantic response_model), matching the existing analytics endpoints; the
+    endpoint is reachable via the existing main.py include_router(analytics, prefix='/v1').
+  why: Consistency with sanctioned-network / risk-summary / ais-gaps-summary; avoids a redundant model
+    layer for a read-only projection.
+- when: '2026-07-13'
+  what: Kept scope to api/** + tests/**; the endpoint self-documents via FastAPI OpenAPI, so no root README/docs
+    change was needed.
+  why: Minimize the diff; discoverability is covered by /docs.
+attempts:
+- when: '2026-07-13'
+  approach: Added build_predictions_query (pure) + the GET /analytics/predictions handler to api/routers/analytics.py,
+    and unit tests exercising the builder and the endpoint via an injected fake memgraph and a lightweight
+    request stand-in.
+  outcome: worked
+  note: ruff clean; unit gate 105 passed / 1 skipped (+6 endpoint tests). Endpoint filters by domain/event_type/min_confidence,
+    orders by confidence desc, inlines a bounded LIMIT.
+questions: []
+next_action: 'Operator: review and close. Downstream ideas (not in this capsule): confidence-decay at
+  read time, and reconciling predicted vs realized events.'
+branch: main
+base_commit: 8c73bf09ce03bd34d1493030c0a9d9daf4075e53
+created_by: agent:claude-code
+created_at: '2026-07-13'
+modified_at: '2026-07-13'
+closed_at: '2026-07-13'

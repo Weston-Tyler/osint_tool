@@ -1,0 +1,20 @@
+schema: aios/evidence@0.1
+id: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-api-01kxejwd4w
+task: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Task/202607-predictions-api
+criteria:
+- ac4
+kind: lint
+outcome: pass
+command: ruff check .
+exit_code: 0
+output_tail: 'All checks passed!
+
+  '
+duration_ms: 93
+at: '2026-07-13T20:32:17+00:00'
+environment:
+  python: 3.13.1
+  platform: win32
+  commit: 8c73bf09ce03bd34d1493030c0a9d9daf4075e53
+  dirty: true
+created_by: person:wta17
