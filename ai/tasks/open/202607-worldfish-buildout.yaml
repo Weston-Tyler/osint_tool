@@ -33,11 +33,17 @@ decisions:
 - when: 2026-07-13
   what: "Scope to worldfish/** + tests/**; defer downstream consumer wiring (graph-processor / API) to a follow-up capsule."
   why: "Keep the diff in scope; the predictive-event output contract (ac2) is the integration seam a consumer binds to later."
+- when: 2026-07-13
+  what: "Ollama model stays fully configurable via env var (OLLAMA_LLM_MODEL); do not pin to a single tag."
+  why: "Operator directive (2026-07-13)."
+- when: 2026-07-13
+  what: "WorldFish emits predictive events to a new mda.predictions.* Kafka topic consumed by the graph-processor; it does NOT write to Memgraph/PostGIS directly."
+  why: "Operator asked for the better option. Matches the platform's event-driven pattern: every source produces to Kafka and the graph-processor is the sole writer to the stores, keeping WorldFish decoupled from the DB schema and consistent with candidates kafka-topic-namespace + graph-processor write-path."
+- when: 2026-07-13
+  what: "Provisional: emit illicit-maritime (IMA) predictive events first; revisit after slice 1."
+  why: "Operator unsure of ordering; agent-recommended default — IMA (domain #1) has the richest existing data (AIS/GFW/sanctions) and vessel-behavior prediction is the most natural fit for the agent sim."
 attempts: []
-questions:
-- "Which predictive-event types/domains should WorldFish emit first (illicit-maritime, cartel, counter-narcotics, C-UAS)?"
-- "Is Ollama qwen2.5:7b (the current default in simulation_engine.py) the intended target model, or should it stay fully configurable?"
-- "Should predictive events land on a new mda.predictions.* topic consumed by the graph-processor, or be written directly to Memgraph/PostGIS?"
+questions: []
 next_action: "Plan slice 1 — pin the predictive-event output contract (ac2: schema + mda.* topic), then wire seed -> persona -> sim -> prediction end-to-end (ac1) behind it."
 branch: main
 base_commit: be401148a0e66f10d2041c9a295bfa4683c46f2a
