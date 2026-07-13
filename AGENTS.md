@@ -91,4 +91,4 @@ re-deriving the repository from raw files.
   and run `aios adapt`.
 - `.aios/` is a rebuildable local cache — never treat it as truth, never commit it.
 
-<!-- aios:checksum content:sha256:f3dca70a24d42765 source:sha256:060ac0fd9fb1f427 v:0.1.0 -->
+<!-- aios:checksum content:sha256:f3dca70a24d42765 source:sha256:d1f94da6e4e130f1 v:0.1.0 -->

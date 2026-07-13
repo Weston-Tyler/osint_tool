@@ -1,0 +1,7 @@
+# AIOS knowledge records and the generated adapters are content-hashed by the
+# `aios` CLI. Pin LF so those checksums stay stable across platforms: with
+# Windows core.autocrlf=true, a checkout would rewrite them to CRLF and make
+# `aios validate` report the adapters as stale even though nothing changed.
+ai/** text eol=lf
+AGENTS.md text eol=lf
+CLAUDE.md text eol=lf
