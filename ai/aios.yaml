@@ -1,0 +1,13 @@
+schema: aios/manifest@0.1
+repo:
+  ulid: 01KXE5FNAHRNYRTP3BGYS72X6T
+  name: osint_tool
+adapters:
+- agents-md
+- claude-code
+assembly:
+  budget_default: 30000
+  floor_binding_pct: 40
+versions:
+  ontology: '0.1'
+layers: {}

@@ -65,3 +65,4 @@ frontend/kepler-gl/build/
 .coverage
 htmlcov/
 .pytest_cache/
+.aios/
