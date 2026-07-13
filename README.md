@@ -44,7 +44,7 @@ make setup
 curl http://localhost:8000/health
 
 # 4. Ingest initial data
-make ingest-ofac
+make ingest-opensanctions
 make ingest-gdelt
 ```
 

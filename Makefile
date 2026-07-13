@@ -74,10 +74,7 @@ format: ## Auto-format code
 
 # ---- Data Ingestion ----
 
-ingest-ofac: ## Run OFAC SDN ingestion
-	python workers/sanctions/ofac_sdn_ingester.py
-
-ingest-opensanctions: ## Run OpenSanctions ingestion
+ingest-opensanctions: ## Run OpenSanctions ingestion (OFAC SDN + 40 other lists)
 	python workers/sanctions/opensanctions_ingester.py
 
 ingest-gdelt: ## Run GDELT latest events ingestion

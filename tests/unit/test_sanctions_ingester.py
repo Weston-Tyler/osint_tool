@@ -1,64 +1,118 @@
-"""Unit tests for sanctions ingestion parsing."""
+"""Unit tests for sanctions ingestion parsing.
 
-import pytest
+OFAC's standalone SDN ingester was retired in favour of OpenSanctions (which merges
+the OFAC SDN list with 40+ others). These tests cover the OpenSanctions FollowTheMoney
+(FTM) → MDA converters that replaced the old ``parse_ofac_*`` functions.
+"""
 
-from workers.sanctions.ofac_sdn_ingester import parse_ofac_vessel, parse_ofac_individual, parse_ofac_entity
+import json
+
+from workers.sanctions.opensanctions_ingester import (
+    FTM_CONVERTERS,
+    ftm_to_organization,
+    ftm_to_person,
+    ftm_to_vessel,
+    stream_entities,
+)
 
 
-class TestOFACParsing:
+class TestFTMVessel:
     def test_parse_vessel(self):
-        entry = {
-            "uid": 12345,
-            "sdnType": "Vessel",
-            "lastName": "EVER FORWARD",
-            "ids": [
-                {"idType": "IMO Number", "idNumber": "IMO 9123456"},
-                {"idType": "MMSI", "idNumber": "123456789"},
-            ],
-            "programs": [{"program": "IRAN"}],
-            "akas": [{"lastName": "PACIFIC STAR"}],
-            "remarks": "Flag: Panama",
+        entity = {
+            "id": "vessel-ever-forward",
+            "schema": "Vessel",
+            "datasets": ["us_ofac_sdn"],
+            "properties": {
+                "name": ["EVER FORWARD", "PACIFIC STAR"],
+                "imoNumber": ["9123456"],
+                "mmsi": ["123456789"],
+                "flag": ["Panama"],
+                "weakAlias": ["EVERFORWARD"],
+            },
         }
-        result = parse_ofac_vessel(entry)
-        assert result is not None
+        result = ftm_to_vessel(entity)
+        assert result["entity_type"] == "vessel"
         assert result["imo"] == "9123456"
         assert result["mmsi"] == "123456789"
         assert result["name"] == "EVER FORWARD"
+        assert result["flag_state"] == "Panama"
         assert result["sanctions_status"] == "SANCTIONED"
-        assert "IRAN" in result["ofac_programs"]
+        assert "us_ofac_sdn" in result["sanctions_datasets"]
+        # aliases = remaining names + weak aliases
         assert "PACIFIC STAR" in result["aliases"]
+        assert "EVERFORWARD" in result["aliases"]
 
-    def test_parse_non_vessel_returns_none(self):
-        entry = {"uid": 99999, "sdnType": "Individual", "lastName": "Smith"}
-        assert parse_ofac_vessel(entry) is None
+    def test_missing_properties_default_to_none(self):
+        result = ftm_to_vessel({"id": "bare", "schema": "Vessel", "properties": {}})
+        assert result["imo"] is None
+        assert result["mmsi"] is None
+        assert result["name"] is None
+        assert result["aliases"] == []
 
-    def test_parse_individual(self):
-        entry = {
-            "uid": 54321,
-            "sdnType": "Individual",
-            "firstName": "Joaquin",
-            "lastName": "GUZMAN LOERA",
-            "dateOfBirth": "1957-04-04",
-            "placeOfBirth": "Mexico",
-            "nationality": "MX",
-            "programs": [{"program": "SDNT"}],
-            "akas": [{"firstName": "El Chapo", "lastName": "GUZMAN"}],
-            "remarks": "",
+
+class TestFTMPerson:
+    def test_parse_person(self):
+        entity = {
+            "id": "person-guzman",
+            "schema": "Person",
+            "datasets": ["us_ofac_sdn"],
+            "properties": {
+                "name": ["Joaquin GUZMAN LOERA", "El Chapo"],
+                "birthDate": ["1957-04-04"],
+                "nationality": ["mx"],
+                "birthPlace": ["Mexico"],
+            },
         }
-        result = parse_ofac_individual(entry)
-        assert result is not None
+        result = ftm_to_person(entity)
+        assert result["entity_type"] == "person"
         assert result["name_full"] == "Joaquin GUZMAN LOERA"
-        assert "El Chapo GUZMAN" in result["aliases"]
+        assert "El Chapo" in result["aliases"]
+        assert result["dob"] == "1957-04-04"
+        assert result["nationality"] == "mx"
+        assert result["place_of_birth"] == "Mexico"
 
-    def test_parse_entity(self):
-        entry = {
-            "uid": 67890,
-            "sdnType": "Entity",
-            "lastName": "Sinaloa Cartel Front Company LLC",
-            "programs": [{"program": "SDNTK"}],
-            "akas": [],
-            "remarks": "",
+
+class TestFTMOrganization:
+    def test_parse_organization(self):
+        entity = {
+            "id": "org-front",
+            "schema": "Company",
+            "datasets": ["us_ofac_sdn"],
+            "properties": {
+                "name": ["Sinaloa Cartel Front Company LLC"],
+                "jurisdiction": ["mx"],
+            },
         }
-        result = parse_ofac_entity(entry)
-        assert result is not None
+        result = ftm_to_organization(entity)
         assert result["entity_type"] == "organization"
+        assert result["name"] == "Sinaloa Cartel Front Company LLC"
+        assert result["jurisdiction"] == "mx"
+        assert result["sanctions_status"] == "SANCTIONED"
+
+    def test_converter_registry_covers_company_and_legalentity(self):
+        # Company/LegalEntity both map to the organization converter
+        assert FTM_CONVERTERS["Company"] is ftm_to_organization
+        assert FTM_CONVERTERS["LegalEntity"] is ftm_to_organization
+        assert set(FTM_CONVERTERS) == {"Vessel", "Person", "Organization", "Company", "LegalEntity"}
+
+
+class TestStreamEntities:
+    def test_schema_filter(self, tmp_path):
+        f = tmp_path / "entities.ftm.json"
+        f.write_text(
+            "\n".join(
+                json.dumps(e)
+                for e in [
+                    {"id": "v1", "schema": "Vessel", "properties": {}},
+                    {"id": "p1", "schema": "Person", "properties": {}},
+                    {"id": "s1", "schema": "Sanction", "properties": {}},
+                ]
+            )
+        )
+        ids = [e["id"] for e in stream_entities(f, schema_filter=["Vessel", "Person"])]
+        assert ids == ["v1", "p1"]
+
+    def test_no_filter_yields_all(self, tmp_path):
+        f = tmp_path / "entities.ftm.json"
+        f.write_text(json.dumps({"id": "x", "schema": "Anything", "properties": {}}))
+        assert [e["id"] for e in stream_entities(f)] == ["x"]
