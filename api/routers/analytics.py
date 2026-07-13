@@ -1,8 +1,46 @@
 """Analytics API endpoints — network analysis, risk scoring, community detection."""
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Query, Request
 
 router = APIRouter()
+
+# WorldFish predictions lose confidence with age; matches CausalPrediction's default.
+DEFAULT_DECAY_RATE = 0.02
+
+
+def decayed_confidence(confidence, generated_at, now, decay_rate: float = DEFAULT_DECAY_RATE):
+    """Return (current_confidence, age_days) after exponential daily decay.
+
+    Falls back to the base confidence with ``age_days=None`` when ``generated_at``
+    is missing or unparseable. Pure — ``now`` is passed in for deterministic tests.
+    """
+    base = float(confidence or 0.0)
+    if not generated_at:
+        return round(base, 4), None
+    try:
+        ts = datetime.fromisoformat(str(generated_at).replace("Z", "+00:00"))
+    except ValueError:
+        return round(base, 4), None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    age_days = max(0.0, (now - ts).total_seconds() / 86400.0)
+    current = base * ((1 - decay_rate) ** age_days)
+    return round(current, 4), round(age_days, 2)
+
+
+def enrich_with_decay(rows, now, decay_rate: float = DEFAULT_DECAY_RATE) -> list[dict]:
+    """Add current_confidence + age_days to each row and sort by current_confidence desc."""
+    enriched = []
+    for row in rows:
+        item = dict(row)
+        current, age = decayed_confidence(item.get("confidence"), item.get("generated_at"), now, decay_rate)
+        item["current_confidence"] = current
+        item["age_days"] = age
+        enriched.append(item)
+    enriched.sort(key=lambda x: x["current_confidence"], reverse=True)
+    return enriched
 
 
 @router.get("/analytics/sanctioned-network")
@@ -143,6 +181,7 @@ def build_predictions_query(
                p.timeframe_max_days AS timeframe_max_days,
                p.causal_chain_summary AS causal_chain_summary,
                p.simulation_run_id AS simulation_run_id,
+               p.generated_at AS generated_at,
                t.event_id AS trigger_event_id
         ORDER BY p.confidence DESC
         LIMIT {limit}
@@ -161,7 +200,9 @@ async def get_predictions(
     """Get WorldFish predictive events, filterable by domain, type, and confidence."""
     mg = request.app.state.memgraph
     cypher, params = build_predictions_query(domain, event_type, min_confidence, limit)
-    results = [dict(r) for r in mg.execute_and_fetch(cypher, params)]
+    rows = mg.execute_and_fetch(cypher, params)
+    # Enrich with age-decayed confidence and rank freshest-strongest first.
+    results = enrich_with_decay(rows, datetime.now(timezone.utc))
     return {
         "predictions": results,
         "count": len(results),

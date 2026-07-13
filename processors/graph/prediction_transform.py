@@ -63,6 +63,9 @@ def build_predicted_event_cypher(env: dict) -> tuple[str, dict]:
         "chain_path": [str(x) for x in (chain.get("path") or [])],
         "chain_summary": chain.get("summary", ""),
         "sver": env.get("schema_version", ""),
+        # generated_at lives on the assertion wrapper (payload.generated_at);
+        # stored so the API can decay confidence by prediction age.
+        "gen_at": (env.get("payload") or {}).get("generated_at", ""),
     }
     cypher = f"""
     MERGE (p:{NODE_LABEL} {{prediction_id: $pid}})
@@ -82,6 +85,7 @@ def build_predicted_event_cypher(env: dict) -> tuple[str, dict]:
         p.causal_chain_path = $chain_path,
         p.causal_chain_summary = $chain_summary,
         p.schema_version = $sver,
+        p.generated_at = $gen_at,
         p.source_ids = ['worldfish'],
         p.system_updated_at = localDateTime()
     """

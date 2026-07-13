@@ -4,9 +4,15 @@ Exercises the router in isolation (no gqlalchemy / live Memgraph) via an injecte
 fake state.memgraph and a lightweight request stand-in.
 """
 
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from api.routers.analytics import build_predictions_query, get_predictions
+from api.routers.analytics import (
+    build_predictions_query,
+    decayed_confidence,
+    enrich_with_decay,
+    get_predictions,
+)
 
 
 class FakeMemgraph:
@@ -79,3 +85,49 @@ class TestEndpoint:
         )
         assert resp["count"] == 0
         assert resp["predictions"] == []
+
+    async def test_response_carries_decay_fields(self):
+        rows = [{"prediction_id": "p1", "confidence": 0.8, "generated_at": "2026-07-13T00:00:00Z"}]
+        resp = await get_predictions(
+            _request(FakeMemgraph(rows)), domain=None, event_type=None, min_confidence=0.0, limit=100
+        )
+        assert "current_confidence" in resp["predictions"][0]
+        assert "age_days" in resp["predictions"][0]
+
+
+class TestDecay:
+    def test_no_decay_at_generation(self):
+        now = datetime(2026, 7, 13, tzinfo=timezone.utc)
+        current, age = decayed_confidence(0.8, "2026-07-13T00:00:00Z", now)
+        assert current == 0.8
+        assert age == 0.0
+
+    def test_decays_over_time(self):
+        now = datetime(2026, 7, 23, tzinfo=timezone.utc)  # 10 days later
+        current, age = decayed_confidence(0.8, "2026-07-13T00:00:00+00:00", now)
+        assert age == 10.0
+        assert current < 0.8
+        assert abs(current - 0.8 * (0.98 ** 10)) < 1e-4
+
+    def test_missing_generated_at(self):
+        now = datetime(2026, 7, 13, tzinfo=timezone.utc)
+        current, age = decayed_confidence(0.8, "", now)
+        assert current == 0.8
+        assert age is None
+
+    def test_unparseable_generated_at(self):
+        now = datetime(2026, 7, 13, tzinfo=timezone.utc)
+        current, age = decayed_confidence(0.5, "not-a-date", now)
+        assert current == 0.5
+        assert age is None
+
+    def test_enrich_ranks_fresh_over_stale(self):
+        now = datetime(2026, 7, 23, tzinfo=timezone.utc)
+        rows = [
+            {"prediction_id": "stale_high", "confidence": 0.9, "generated_at": "2026-06-13T00:00:00Z"},
+            {"prediction_id": "fresh_mid", "confidence": 0.6, "generated_at": "2026-07-23T00:00:00Z"},
+        ]
+        out = enrich_with_decay(rows, now)
+        # stale_high decays below fresh_mid, so the fresher prediction ranks first
+        assert out[0]["prediction_id"] == "fresh_mid"
+        assert all("current_confidence" in r and "age_days" in r for r in out)

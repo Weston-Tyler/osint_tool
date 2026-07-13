@@ -64,6 +64,13 @@ class TestBuildCypher:
         with pytest.raises(PredictionContractError):
             build_predicted_event_cypher(_env(schema="x"))
 
+    def test_generated_at_captured(self):
+        env = _env()
+        env["payload"]["generated_at"] = "2026-07-13T00:00:00Z"
+        cypher, params = build_predicted_event_cypher(env)
+        assert params["gen_at"] == "2026-07-13T00:00:00Z"
+        assert "p.generated_at = $gen_at" in cypher
+
     def test_trigger_link(self):
         link = build_trigger_link_cypher(_env())
         assert link is not None
