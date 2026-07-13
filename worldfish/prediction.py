@@ -127,3 +127,140 @@ class CausalPrediction:
 
     def to_json(self, indent: int = 2) -> str:
         return json.dumps(self.to_obi_assertion_dict(), indent=indent, default=str)
+
+
+# ---------------------------------------------------------------------------
+# Prediction generation (deterministic, rule-based)
+# ---------------------------------------------------------------------------
+
+# Event-type names keyed by (signal, domain). "_" is the domain-agnostic default.
+_EVENT_TYPES: dict[str, dict[str, str]] = {
+    "violence": {"maritime": "MARITIME_VIOLENT_INCIDENT", "territorial": "ARMED_CLASH", "_": "VIOLENCE_ESCALATION"},
+    "enforcement": {"maritime": "INTERDICTION_OPERATION", "territorial": "CHECKPOINT_OPERATION", "_": "ENFORCEMENT_ACTION"},
+    "instability": {"maritime": "MARITIME_ROUTE_DISRUPTION", "territorial": "TERRITORIAL_INSTABILITY", "_": "INSTABILITY_EVENT"},
+    "status_quo": {"_": "STATUS_QUO_CONTINUATION"},
+}
+
+# A signal must reach this strength before it becomes its own prediction.
+_SIGNAL_THRESHOLD = 0.10
+
+
+def _event_type(signal: str, domain: str) -> str:
+    return _EVENT_TYPES[signal].get(domain, _EVENT_TYPES[signal]["_"])
+
+
+def _confidence(strength: float, n_steps: int, n_agents: int) -> float:
+    """Confidence from signal strength, damped by how much simulation backed it."""
+    coverage = min(1.0, n_steps / 30.0) * min(1.0, n_agents / 15.0)
+    raw = (0.15 + 0.65 * strength) * (0.6 + 0.4 * coverage)
+    return round(max(0.0, min(1.0, raw)), 4)
+
+
+def _top_actions(agent_action_summary: dict, limit: int = 3) -> list[str]:
+    """Most frequent agent actions across the run (deterministic ordering)."""
+    totals: dict[str, int] = {}
+    for summ in agent_action_summary.values():
+        for action, count in (summ.get("actions") or {}).items():
+            totals[action] = totals.get(action, 0) + int(count)
+    ranked = sorted(totals.items(), key=lambda kv: (-kv[1], kv[0]))
+    return [name for name, _ in ranked[:limit]]
+
+
+def generate_predictions(
+    *,
+    seed_id: str,
+    simulation_run_id: str,
+    trigger_event_id: str,
+    trigger_event_type: str,
+    domain: str,
+    n_agents: int,
+    state_history: list[dict],
+    agent_action_summary: dict,
+    region: str = "",
+    lat: float | None = None,
+    lon: float | None = None,
+    step_days: float = 2.0,
+) -> list[CausalPrediction]:
+    """Derive forward-looking :class:`CausalPrediction` objects from a run.
+
+    Pure and deterministic over its inputs (the ``prediction_id`` and
+    ``generated_at`` fields are the only non-deterministic parts). Always returns
+    at least one prediction so a completed simulation never emits nothing.
+    """
+    if not state_history:
+        state_history = [{"violence": 0.0, "enforcement": 0.0, "stability": 1.0}]
+
+    n_steps = len(state_history)
+    first, last = state_history[0], state_history[-1]
+    peak_violence = max(s.get("violence", 0.0) for s in state_history)
+    peak_step = max(range(n_steps), key=lambda i: state_history[i].get("violence", 0.0))
+
+    delta_violence = last.get("violence", 0.0) - first.get("violence", 0.0)
+    final_enforcement = last.get("enforcement", 0.0)
+    stability_drop = first.get("stability", 1.0) - last.get("stability", 1.0)
+
+    # (signal-key, strength) — strength clamped to [0, 1].
+    signals: list[tuple[str, float]] = [
+        ("violence", max(delta_violence, peak_violence - 0.4)),
+        ("enforcement", final_enforcement - 0.4),
+        ("instability", stability_drop),
+    ]
+    signals = [(k, min(1.0, s)) for k, s in signals if s >= _SIGNAL_THRESHOLD]
+    signals.sort(key=lambda ks: (-ks[1], ks[0]))
+
+    horizon_days = max(1.0, n_steps * step_days)
+    median_days = int(round(horizon_days))
+    top_actions = _top_actions(agent_action_summary)
+
+    def _make(signal: str, strength: float) -> CausalPrediction:
+        etype = _event_type(signal, domain)
+        conf = _confidence(strength, n_steps, n_agents)
+        return CausalPrediction(
+            simulation_run_id=simulation_run_id,
+            predicted_event_type=etype,
+            predicted_event_description=(
+                f"Simulation from {trigger_event_type or 'trigger'} in "
+                f"{region or 'the seeded region'} projects a {etype.replace('_', ' ').lower()} "
+                f"within ~{median_days} days (peaked at step {peak_step})."
+            ),
+            predicted_location_lat=lat,
+            predicted_location_lon=lon,
+            predicted_location_region=region,
+            predicted_timeframe_min_days=max(0, int(median_days * 0.5)),
+            predicted_timeframe_median_days=median_days,
+            predicted_timeframe_max_days=max(median_days, int(median_days * 1.5)),
+            confidence=conf,
+            trigger_event_id=trigger_event_id,
+            causal_chain_path=[trigger_event_id, *top_actions],
+            causal_chain_summary=(
+                f"{trigger_event_type or 'trigger'} -> "
+                + " -> ".join(top_actions) if top_actions else (trigger_event_type or "trigger")
+            ),
+            causal_chain_hop_count=1 + len(top_actions),
+            n_agents=n_agents,
+            n_simulation_steps=n_steps,
+            domain=domain,
+            scenario_variables={
+                "peak_violence": round(peak_violence, 4),
+                "delta_violence": round(delta_violence, 4),
+                "final_enforcement": round(final_enforcement, 4),
+                "stability_drop": round(stability_drop, 4),
+            },
+        )
+
+    if not signals:
+        # Flat trajectory — still emit one low-confidence baseline prediction.
+        return [_make("status_quo", 0.0)]
+
+    predictions = [_make(sig, strength) for sig, strength in signals]
+    # Fold the weaker signals in as alternative outcomes on the strongest one.
+    for sig, strength in signals[1:]:
+        predictions[0].alternative_outcomes.append(
+            AlternativeOutcome(
+                description=f"Instead, a {_event_type(sig, domain).replace('_', ' ').lower()} develops.",
+                probability=_confidence(strength, n_steps, n_agents),
+                predicted_event_type=_event_type(sig, domain),
+                divergence_point=f"step {peak_step}",
+            )
+        )
+    return predictions

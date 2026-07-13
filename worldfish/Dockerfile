@@ -8,6 +8,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends gcc g++ && \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+# Keep the package importable: files land under /app/worldfish so the relative
+# imports resolve and `python -m worldfish` works.
+COPY . ./worldfish/
 
-CMD ["python", "-u", "-m", "worldfish.simulation_engine"]
+CMD ["python", "-u", "-m", "worldfish"]

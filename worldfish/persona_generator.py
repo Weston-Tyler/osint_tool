@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -396,3 +397,107 @@ class OBIAgentPersonaGenerator:
             initial_memories=data.get("initial_memories", []),
             system_prompt=data.get("system_prompt", ""),
         )
+
+
+# ---------------------------------------------------------------------------
+# Deterministic synthetic personas (no LLM) — for offline runs and tests.
+# ---------------------------------------------------------------------------
+
+# Behavioural templates keyed by agent_type. ``risk_base``/``coop_base`` are the
+# centres jittered by a seeded RNG so a fixed rng_seed yields identical personas.
+_SYNTH_TEMPLATES: dict[str, dict[str, Any]] = {
+    "smuggling_network": {
+        "label": "Smuggling Cell", "decision_style": "opportunistic", "risk_base": 0.78, "coop_base": 0.55,
+        "description": "A maritime smuggling cell moving contraband via go-fast boats and fishing vessels.",
+        "motivation": "Move product to market while evading coast-guard interdiction.",
+        "resources": ["go-fast boat", "fuel cache", "burner phones"],
+        "capabilities": ["AIS spoofing", "night transit", "route switching"],
+    },
+    "cartel_faction": {
+        "label": "Cartel Faction", "decision_style": "aggressive", "risk_base": 0.70, "coop_base": 0.35,
+        "description": "An operational faction of a trafficking organization contesting territory.",
+        "motivation": "Hold logistics corridors and deter rivals and enforcement.",
+        "resources": ["armed cell", "safehouses", "bribery fund"],
+        "capabilities": ["violence", "extortion", "corruption"],
+    },
+    "enforcement_uscg": {
+        "label": "USCG Cutter", "decision_style": "methodical", "risk_base": 0.45, "coop_base": 0.8,
+        "description": "A US Coast Guard unit running counter-narcotics patrols in the transit zone.",
+        "motivation": "Detect, board, and interdict suspicious vessels.",
+        "resources": ["cutter", "boarding team", "surveillance feed"],
+        "capabilities": ["patrol", "boarding", "interdiction"],
+    },
+    "enforcement_dea": {
+        "label": "DEA Team", "decision_style": "intelligence-driven", "risk_base": 0.4, "coop_base": 0.85,
+        "description": "A DEA team coordinating intelligence-driven interdiction with partners.",
+        "motivation": "Disrupt trafficking networks through targeted operations.",
+        "resources": ["informant network", "signals intel", "task force"],
+        "capabilities": ["surveillance", "targeting", "coordination"],
+    },
+    "enforcement_sedena": {
+        "label": "SEDENA Unit", "decision_style": "methodical", "risk_base": 0.5, "coop_base": 0.7,
+        "description": "A Mexican SEDENA unit running checkpoints in contested territory.",
+        "motivation": "Suppress trafficking and hold checkpoints.",
+        "resources": ["patrol", "checkpoint", "armored vehicle"],
+        "capabilities": ["checkpoint", "patrol", "seizure"],
+    },
+    "maritime_operator": {
+        "label": "Maritime Operator", "decision_style": "cautious", "risk_base": 0.5, "coop_base": 0.5,
+        "description": "A commercial vessel operator whose routes intersect the theater.",
+        "motivation": "Keep cargo moving and avoid risk.",
+        "resources": ["vessel", "crew"], "capabilities": ["transit", "port calls"],
+    },
+    "civilian": {
+        "label": "Civilian", "decision_style": "cautious", "risk_base": 0.25, "coop_base": 0.5,
+        "description": "A local non-combatant who may be coerced, bribed, or serve as an informant.",
+        "motivation": "Stay safe and protect family.",
+        "resources": ["local knowledge"], "capabilities": ["observe", "report"],
+    },
+}
+
+_DEFAULT_MIX = ["smuggling_network", "enforcement_uscg", "cartel_faction", "enforcement_dea", "civilian"]
+
+
+def build_synthetic_personas(
+    n_agents: int,
+    agent_types: list[str] | None = None,
+    rng_seed: int = 0,
+) -> list[AgentPersona]:
+    """Build ``n_agents`` valid personas deterministically, without any LLM.
+
+    Given the same ``n_agents``, ``agent_types``, and ``rng_seed`` the result is
+    byte-for-byte identical (persona_id included), which is what the WorldFish
+    reproducibility guarantee rests on. ``agent_types`` cycles to fill the roster.
+    """
+    rng = random.Random(rng_seed)
+    types = [t for t in (agent_types or []) if t in _SYNTH_TEMPLATES] or _DEFAULT_MIX
+    personas: list[AgentPersona] = []
+    for i in range(max(0, n_agents)):
+        atype = types[i % len(types)]
+        tmpl = _SYNTH_TEMPLATES[atype]
+        rt = round(min(1.0, max(0.0, tmpl["risk_base"] + rng.uniform(-0.15, 0.15))), 3)
+        cp = round(min(1.0, max(0.0, tmpl["coop_base"] + rng.uniform(-0.15, 0.15))), 3)
+        access = rng.choice(["full", "partial", "minimal"])
+        personas.append(
+            AgentPersona(
+                persona_id=f"wf-{rng_seed}-{i:03d}",
+                obi_object_id=f"synthetic:{atype}:{i}",
+                agent_type=atype,
+                name=f"{tmpl['label']} {i + 1}",
+                description=tmpl["description"],
+                motivation=tmpl["motivation"],
+                decision_style=tmpl["decision_style"],
+                risk_tolerance=rt,
+                cooperation_propensity=cp,
+                information_access=access,
+                domain_attributes={"synthetic": True},
+                resources=list(tmpl["resources"]),
+                capabilities=list(tmpl["capabilities"]),
+                initial_memories=[f"I am a {atype.replace('_', ' ')} operating in the theater."],
+                system_prompt=(
+                    f"You are a {tmpl['label']}. {tmpl['description']} "
+                    f"Motivation: {tmpl['motivation']} Act in character."
+                ),
+            )
+        )
+    return personas

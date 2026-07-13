@@ -13,8 +13,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from gqlalchemy import Memgraph
-
 logger = logging.getLogger("worldfish.seed_extractor")
 
 # ---------------------------------------------------------------------------
@@ -74,6 +72,10 @@ class OBISeedExtractor:
         self._host = host
         self._port = port
         self._n_hops = n_hops
+        # Imported lazily so the module (and build_demo_seed) works without
+        # gqlalchemy installed / a live Memgraph — only the graph path needs it.
+        from gqlalchemy import Memgraph
+
         self._db = Memgraph(host=host, port=port)
         logger.info(
             "OBISeedExtractor connected to Memgraph at %s:%s (n_hops=%d)",
@@ -403,3 +405,57 @@ class OBISeedExtractor:
             f"involving {n_entities} entities across {n_patterns} recognized "
             f"patterns.{pattern_text}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Offline demo seed (no Memgraph) — for the CLI, demos, and tests.
+# ---------------------------------------------------------------------------
+
+
+def build_demo_seed(domain: str = "maritime", trigger_mode: str = "analyst_initiated") -> SimulationSeed:
+    """Return a deterministic, self-contained illicit-maritime seed.
+
+    Modeled on an ``AIS_DISABLE`` trigger with a follow-on STS transfer in the
+    Eastern Pacific transit zone. Requires no Memgraph, so it is the default
+    scenario for ``python -m worldfish`` and the offline test suite.
+    """
+    trigger_id = "demo-evt-ais-disable-0001"
+    return SimulationSeed(
+        seed_id="demo-seed-0001",
+        trigger_event_id=trigger_id,
+        trigger_event_type="AIS_DISABLE",
+        trigger_risk_score=8.2,
+        triggered_at=datetime(2026, 7, 1, 0, 0, 0),
+        trigger_mode=trigger_mode,
+        seed_events=[
+            {"event_id": trigger_id, "event_type": "AIS_DISABLE", "risk_score": 8.2,
+             "region": "Eastern Pacific", "latitude": 12.5, "longitude": -90.3,
+             "description": "Vessel disabled AIS near a known transit corridor."},
+            {"event_id": "demo-evt-sts-0002", "event_type": "STS_TRANSFER", "risk_score": 7.1,
+             "region": "Eastern Pacific", "latitude": 12.7, "longitude": -90.1,
+             "description": "Probable ship-to-ship transfer detected by SAR."},
+        ],
+        seed_entities=[
+            {"object_id": "demo-vessel-01", "object_type": "VESSEL", "name": "MV NIGHT HERON",
+             "risk_score": 7.5, "country": "PA", "role": "suspect_vessel"},
+            {"object_id": "demo-org-01", "object_type": "ORGANIZATION", "name": "Corredor Azul",
+             "faction": "smuggling_network", "risk_score": 8.0, "role": "adversary"},
+            {"object_id": "demo-uscg-01", "object_type": "ORGANIZATION", "name": "USCG Cutter",
+             "faction": "USCG", "role": "coast_guard"},
+        ],
+        seed_causal_edges=[
+            {"source_event_id": trigger_id, "target_event_id": "demo-evt-sts-0002",
+             "relationship_type": "ENABLES", "confidence": 0.7, "lag_hours": 18},
+        ],
+        seed_patterns=[
+            {"pattern_id": "demo-pat-01", "pattern_type": "DARK_TRANSIT",
+             "description": "AIS gaps clustered along a known smuggling corridor.",
+             "region": "Eastern Pacific"},
+        ],
+        recommended_domain=domain,
+        recommended_agents=["smuggling_network", "enforcement_uscg", "cartel_faction", "civilian"],
+        scenario_description=(
+            "AIS_DISABLE trigger in the Eastern Pacific transit zone with a probable "
+            "follow-on STS transfer; smuggling network vs USCG interdiction."
+        ),
+    )
