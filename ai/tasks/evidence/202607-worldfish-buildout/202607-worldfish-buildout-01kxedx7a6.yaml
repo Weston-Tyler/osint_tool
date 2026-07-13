@@ -1,0 +1,21 @@
+schema: aios/evidence@0.1
+id: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-worldfish-buildout-01kxedx7a6
+task: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Task/202607-worldfish-buildout
+criteria:
+- ac1
+kind: manual-check
+outcome: pass
+command: python -m worldfish --steps 20
+exit_code: 0
+output_tail: "WorldFish run 8e2a8c96 | domain=maritime | agents=24 | steps=10 | predictions=1 (dry-run;\
+  \ pass --publish to emit to Kafka)\n  - [      low] INTERDICTION_OPERATION in ~20d @ Eastern Pacific\
+  \ (conf 0.40)\n2026-07-13 15:05:20,936 mda.worldfish.engine INFO Terminal: Maximum enforcement pressure\n\
+  2026-07-13 15:05:20,936 mda.worldfish.publisher INFO [dry-run] 1 prediction(s) not sent to mda.predictions.worldfish\n"
+duration_ms: 759
+at: '2026-07-13T19:05:20+00:00'
+environment:
+  python: 3.13.1
+  platform: win32
+  commit: f7066f5786e8d26d82cac23dcac541a760d39fdd
+  dirty: true
+created_by: person:wta17

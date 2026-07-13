@@ -1,0 +1,20 @@
+schema: aios/evidence@0.1
+id: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-worldfish-buildout-01kxedwrda
+task: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Task/202607-worldfish-buildout
+criteria:
+- ac4
+kind: lint
+outcome: pass
+command: ruff check .
+exit_code: 0
+output_tail: 'All checks passed!
+
+  '
+duration_ms: 105
+at: '2026-07-13T19:05:05+00:00'
+environment:
+  python: 3.13.1
+  platform: win32
+  commit: f7066f5786e8d26d82cac23dcac541a760d39fdd
+  dirty: false
+created_by: person:wta17

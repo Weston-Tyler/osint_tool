@@ -1,0 +1,23 @@
+schema: aios/evidence@0.1
+id: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-worldfish-buildout-01kxedx2tf
+task: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Task/202607-worldfish-buildout
+criteria:
+- ac2
+- ac3
+kind: test-run
+outcome: pass
+command: python -m pytest tests/unit/test_worldfish_prediction.py -q
+exit_code: 0
+output_tail: '.......                                                                  [100%]
+
+  7 passed in 0.68s
+
+  '
+duration_ms: 2691
+at: '2026-07-13T19:05:16+00:00'
+environment:
+  python: 3.13.1
+  platform: win32
+  commit: f7066f5786e8d26d82cac23dcac541a760d39fdd
+  dirty: true
+created_by: person:wta17

@@ -2,7 +2,7 @@ schema: aios/capsule@0.1
 id: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Task/202607-worldfish-buildout
 kind: feature
 goal: Fully build out the WorldFish predictive-event integration
-state: active
+state: done
 scope:
   paths:
   - worldfish/**
@@ -14,29 +14,37 @@ acceptance:
   criterion: 'End-to-end run works from a real seed: seed_extractor -> persona_generator -> simulation_engine
     -> prediction produces at least one predictive event, via a documented entrypoint (CLI or module).'
   met: true
-  evidence: []
+  evidence:
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-worldfish-buildout-01kxedwzc2
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-worldfish-buildout-01kxedx7a6
 - id: ac2
   criterion: A versioned predictive-event output contract is documented and stored in the repo (fields
     + types), and WorldFish emits to a defined Kafka topic following the mda.<domain>.* convention (e.g.
     mda.predictions.*).
   met: true
-  evidence: []
+  evidence:
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-worldfish-buildout-01kxedx2tf
 - id: ac3
   criterion: Deterministic unit tests cover seed_extractor, persona_generator, memory, and prediction
     with no live Ollama; plus one integration test that runs the engine against a real or contract-faithful
     Ollama (not the CI import stub).
   met: true
-  evidence: []
+  evidence:
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-worldfish-buildout-01kxedx2tf
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-worldfish-buildout-01kxedx5z5
 - id: ac4
   criterion: WorldFish runs under docker-compose with env-var config (OLLAMA_BASE_URL, model) documented
     in .env.example; 'ruff check .' and the unit gate ('python -m pytest tests/unit/') stay green.
   met: true
-  evidence: []
+  evidence:
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-worldfish-buildout-01kxedwrda
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-worldfish-buildout-01kxedwzc2
 - id: ac5
   criterion: Agent memory is bounded (deque maxlen honored) and personas are reproducible given a fixed
     seed, proven by tests.
   met: true
-  evidence: []
+  evidence:
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-worldfish-buildout-01kxedwzc2
 risk: WorldFish is the predictive-event foundation; leaving it half-wired blocks the predictive roadmap.
   Ollama and mesa are external and CI-stubbed, so CI tests must not depend on a live model. Keep the diff
   inside worldfish/** + tests/**.
@@ -71,15 +79,15 @@ decisions:
     existed. All code + tests stayed inside the declared scope.
 attempts:
 - when: '2026-07-13'
-  approach: Built the offline-first predictive pipeline end-to-end - versioned output contract
-    (contract.py) + mda.predictions.worldfish topic + Kafka publisher; deterministic generate_predictions;
-    reproducible synthetic personas; engine refactor (internal scheduler, injectable decision policy,
-    predictions wired into run); fixed the n_agents/list, persona-arg, and Dockerfile packaging bugs;
-    added __main__ CLI, build_demo_seed, README + PREDICTION_CONTRACT.
+  approach: Built the offline-first predictive pipeline end-to-end - versioned output contract (contract.py)
+    + mda.predictions.worldfish topic + Kafka publisher; deterministic generate_predictions; reproducible
+    synthetic personas; engine refactor (internal scheduler, injectable decision policy, predictions wired
+    into run); fixed the n_agents/list, persona-arg, and Dockerfile packaging bugs; added __main__ CLI,
+    build_demo_seed, README + PREDICTION_CONTRACT.
   outcome: worked
-  note: 'ruff clean; unit gate 85 passed / 1 skipped (+22 worldfish tests); integration 2 passed; python
+  note: ruff clean; unit gate 85 passed / 1 skipped (+22 worldfish tests); integration 2 passed; python
     -m worldfish emits a prediction and is deterministic per --rng-seed. All 5 acceptance criteria met;
-    left open for operator review + formal close.'
+    left open for operator review + formal close.
 questions: []
 next_action: 'Follow-up capsule: wire the graph-processor to consume mda.predictions.worldfish into Memgraph/PostGIS.
   Then operator: review and close this capsule (record formal evidence via aios verify if desired).'
@@ -89,3 +97,4 @@ created_by: agent:claude-code
 created_at: '2026-07-13'
 modified_at: '2026-07-13'
 resumed_at: '2026-07-13'
+closed_at: '2026-07-13'

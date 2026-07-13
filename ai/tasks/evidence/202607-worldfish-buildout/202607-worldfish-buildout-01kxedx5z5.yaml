@@ -1,0 +1,22 @@
+schema: aios/evidence@0.1
+id: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-worldfish-buildout-01kxedx5z5
+task: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Task/202607-worldfish-buildout
+criteria:
+- ac3
+kind: test-run
+outcome: pass
+command: python -m pytest tests/integration/test_worldfish_ollama.py -q
+exit_code: 0
+output_tail: '..                                                                       [100%]
+
+  2 passed in 0.65s
+
+  '
+duration_ms: 2504
+at: '2026-07-13T19:05:19+00:00'
+environment:
+  python: 3.13.1
+  platform: win32
+  commit: f7066f5786e8d26d82cac23dcac541a760d39fdd
+  dirty: true
+created_by: person:wta17
