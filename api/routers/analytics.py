@@ -182,6 +182,7 @@ def build_predictions_query(
                p.causal_chain_summary AS causal_chain_summary,
                p.simulation_run_id AS simulation_run_id,
                p.generated_at AS generated_at,
+               p.realized AS realized,
                t.event_id AS trigger_event_id
         ORDER BY p.confidence DESC
         LIMIT {limit}

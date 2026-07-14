@@ -15,9 +15,10 @@ from kafka import KafkaConsumer
 # and as a package module (tests import processors.graph.graph_consumer), so
 # support both import contexts.
 try:
-    from . import prediction_transform
+    from . import prediction_transform, reconciliation
 except ImportError:  # script context — same directory on sys.path
     import prediction_transform
+    import reconciliation
 
 logger = logging.getLogger("mda.processor.graph")
 
@@ -509,6 +510,43 @@ class GraphProcessor:
                 msg.get("schema_version"),
             )
 
+    # ── Realized interdictions + reconciliation ─────────────────────
+    def upsert_interdiction(self, msg: dict):
+        """Upsert a realized interdiction as an :Event, then reconcile predictions."""
+        built = reconciliation.build_interdiction_event_cypher(msg)
+        if built is None:
+            return
+        self.memgraph.execute(*built)
+        self.reconcile_realized_event(msg)
+
+    def reconcile_realized_event(self, realized: dict):
+        """Link open predictions this realized event fulfils via :REALIZED_BY."""
+        if not realized.get("event_id") or not realized.get("event_type"):
+            return
+        candidates = self.memgraph.execute_and_fetch(
+            """
+            MATCH (p:PredictedEvent)
+            WHERE (p.realized IS NULL OR p.realized = false)
+            RETURN p.prediction_id AS prediction_id,
+                   p.predicted_event_type AS predicted_event_type,
+                   p.predicted_lat AS predicted_lat,
+                   p.predicted_lon AS predicted_lon,
+                   p.predicted_region AS predicted_region,
+                   p.timeframe_max_days AS timeframe_max_days,
+                   p.generated_at AS generated_at,
+                   p.confidence AS confidence
+            LIMIT 500
+            """
+        )
+        for cand in candidates:
+            cand = dict(cand)
+            match = reconciliation.match_prediction(cand, realized)
+            if match:
+                cypher, params = reconciliation.build_realized_by_cypher(
+                    cand["prediction_id"], realized["event_id"], match
+                )
+                self.memgraph.execute(cypher, params)
+
     def process_message(self, topic: str, msg: dict):
         """Route a Kafka message to the appropriate handler."""
         try:
@@ -525,7 +563,7 @@ class GraphProcessor:
             elif topic == "mda.events.gdelt.raw":
                 pass  # TODO: implement GDELT event processing
             elif topic == "mda.interdictions.new":
-                pass  # TODO: implement interdiction upsert
+                self.upsert_interdiction(msg)
             # ── GFW v3 ──────────────────────────────────────────────
             elif topic == "mda.gfw.encounters":
                 self.upsert_gfw_event(msg, "Encounter", "INVOLVED_IN")
