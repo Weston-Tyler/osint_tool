@@ -1,0 +1,87 @@
+schema: aios/capsule@0.1
+id: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Task/202607-predictions-reconciliation
+kind: feature
+goal: Ingest realized interdictions and reconcile them against open predictions (accuracy loop)
+state: done
+scope:
+  paths:
+  - processors/**
+  - schema/**
+  - api/**
+  - tests/**
+  components: []
+  out_of_scope: []
+acceptance:
+- id: ac1
+  criterion: Realized interdictions on mda.interdictions.new are upserted as :Event nodes (replacing the
+    TODO in graph_consumer), via a pure build_interdiction_event_cypher; messages without event_id are
+    skipped.
+  met: true
+  evidence:
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-reconciliation-01kxf26mwy
+- id: ac2
+  criterion: For each realized event, open :PredictedEvent nodes are matched by type (incl. aliases),
+    spatial proximity (haversine, region fallback), and timeframe; a match links (:PredictedEvent)-[:REALIZED_BY]->(:Event)
+    with distance_km, lead_time_days, confidence_at_prediction, and sets p.realized=true.
+  met: true
+  evidence:
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-reconciliation-01kxf26mwy
+- id: ac3
+  criterion: The matching and Cypher builders are pure and unit-testable with no live Memgraph; the consumer
+    wiring is tested with an injected fake that serves candidate predictions.
+  met: true
+  evidence:
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-reconciliation-01kxf26mwy
+- id: ac4
+  criterion: schema/graph adds indexes for :Event(event_id) and :PredictedEvent(realized); the /v1/analytics/predictions
+    response surfaces the realized flag.
+  met: true
+  evidence:
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-reconciliation-01kxf26mwy
+- id: ac5
+  criterion: Unit tests cover type/spatial/temporal match and non-match, the Cypher builders, and the
+    consumer flow (match links, mismatch does not, missing event_id skipped); 'ruff check .' and 'python
+    -m pytest tests/unit/' stay green.
+  met: true
+  evidence:
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-reconciliation-01kxf26g8r
+  - aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-reconciliation-01kxf26mwy
+risk: Reconciliation writes to the graph (sole write-path). Matching is heuristic (type aliases, 250km,
+  window+7d grace); wrong links overstate model accuracy. Kept the matching pure/tested and the candidate
+  query bounded (LIMIT 500).
+budget:
+  tokens: 30000
+  subagents: 0
+decisions:
+- when: '2026-07-14'
+  what: Reconciliation runs inside the graph-processor on realized-event ingestion; the matching logic
+    is a pure module (reconciliation.py) injected into the consumer.
+  why: The graph-processor is the sole writer to the stores; keeping matching pure makes it deterministic
+    and testable without Memgraph.
+- when: '2026-07-14'
+  what: Match on a predicted->realized TYPE_ALIASES family, distance <= 250km (region-equality fallback
+    when coords absent), and realization within [generated_at, +timeframe_max+7d].
+  why: Reasonable first-cut heuristics; all thresholds are constants that can be tuned. A per-prediction
+    rate/threshold can be threaded later.
+- when: '2026-07-14'
+  what: Included the mda.interdictions.new -> :Event ingestion (previously a TODO) as the realized-event
+    source this loop reconciles against.
+  why: Reconciliation needs a realized-event stream; interdictions are the natural first source for INTERDICTION_OPERATION
+    predictions.
+attempts:
+- when: '2026-07-14'
+  approach: Added processors/graph/reconciliation.py (haversine, type_matches, match_prediction, build_interdiction_event_cypher,
+    build_realized_by_cypher); wired graph_consumer to upsert interdictions and link matching open predictions
+    via :REALIZED_BY; added schema indexes and a realized flag on the predictions API.
+  outcome: worked
+  note: ruff clean; unit gate 129 passed / 1 skipped (+17 tests). A matching realized event links its
+    prediction and marks it realized; type/spatial/temporal mismatches do not link.
+questions: []
+next_action: 'Operator: review and close. Follow-ups: an accuracy/brier-style scoring rollup over realized
+  vs unrealized predictions, and additional realized-event sources beyond interdictions.'
+branch: main
+base_commit: 07cf6c94bfdeac3d502ad33b7b0267434aae1871
+created_by: agent:claude-code
+created_at: '2026-07-14'
+modified_at: '2026-07-14'
+closed_at: '2026-07-14'

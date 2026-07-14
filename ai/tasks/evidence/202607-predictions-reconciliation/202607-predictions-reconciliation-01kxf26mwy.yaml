@@ -1,0 +1,27 @@
+schema: aios/evidence@0.1
+id: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-reconciliation-01kxf26mwy
+task: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Task/202607-predictions-reconciliation
+criteria:
+- ac1
+- ac2
+- ac3
+- ac4
+- ac5
+kind: test-run
+outcome: pass
+command: python -m pytest tests/unit/test_reconciliation.py tests/unit/test_graph_consumer_reconciliation.py
+  tests/unit/test_predictions_api.py -q
+exit_code: 0
+output_tail: '.............................                                            [100%]
+
+  29 passed in 1.84s
+
+  '
+duration_ms: 4066
+at: '2026-07-14T01:00:01+00:00'
+environment:
+  python: 3.13.1
+  platform: win32
+  commit: 07cf6c94bfdeac3d502ad33b7b0267434aae1871
+  dirty: true
+created_by: person:wta17

@@ -1,0 +1,20 @@
+schema: aios/evidence@0.1
+id: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Evidence/202607-predictions-reconciliation-01kxf26g8r
+task: aios:r/01KXE5FNAHRNYRTP3BGYS72X6T/Task/202607-predictions-reconciliation
+criteria:
+- ac5
+kind: lint
+outcome: pass
+command: ruff check .
+exit_code: 0
+output_tail: 'All checks passed!
+
+  '
+duration_ms: 146
+at: '2026-07-14T00:59:56+00:00'
+environment:
+  python: 3.13.1
+  platform: win32
+  commit: 07cf6c94bfdeac3d502ad33b7b0267434aae1871
+  dirty: true
+created_by: person:wta17
